@@ -70,7 +70,7 @@
 <div class="group full"><label>Notas comerciais</label><textarea class="field" id="notes" placeholder="Respostas, objeções, percepção de fit, orçamento, etc."></textarea></div>
 </div>
 
-<div class="ai"><h3>🧠 Direcionamento do Mentor</h3><p id="aiText">Você pode salvar a ficha e depois pedir uma análise das imagens + contexto.</p><div class="direction" id="direction">Próxima ação: <b>classificar o prospect e avançar uma etapa.</b></div><div class="ai-actions"><button type="button" class="btn dark" id="analyze">Analisar prints com IA</button><button type="button" class="btn" id="coach">Me diga a próxima ação</button></div><div class="result hidden" id="aiResult"></div></div>
+<div class="ai"><h3>🧠 Direcionamento do Mentor</h3><p id="aiText">Suba os prints. A IA lê o perfil e o anúncio e preenche os dados automaticamente. Depois confira e salve.</p><div class="direction" id="direction">Próxima ação: <b>classificar o prospect e avançar uma etapa.</b></div><div class="ai-actions"><button type="button" class="btn dark" id="analyze">Ler prints com IA</button><button type="button" class="btn" id="coach">Alex, me ajuda com uma mensagem</button></div><div class="result hidden" id="aiResult"></div></div>
 
 <div class="actions" style="justify-content:flex-end;margin-top:13px"><button type="button" class="btn" id="del">Excluir</button><button type="button" class="btn" id="cancel">Cancelar</button><button class="btn primary">Salvar doutora</button></div>
 </form></div></div>
@@ -116,35 +116,64 @@ $("#new").onclick=()=>open();$("#close").onclick=close;$("#cancel").onclick=clos
 $("#form").onsubmit=e=>{e.preventDefault();let id=$("#id").value,obj={id:id||crypto.randomUUID(),name:$("#name").value.trim(),ig:$("#ig").value.trim(),type:$("#type").value,niche:$("#niche").value.trim(),city:$("#city").value.trim(),contact:$("#contact").value.trim(),ad:$("#ad").value,priority:$("#priority").value,status:$("#status").value,follow:$("#follow").value,obs:$("#obs").value.trim(),last:$("#last").value.trim(),nextAction:$("#nextAction").value.trim(),message:$("#message").value.trim(),notes:$("#notes").value.trim(),adImages:imgs.ad,profileImages:imgs.profile,chatImages:imgs.chat};if(id)leads=leads.map(x=>x.id===id?obj:x);else leads.unshift(obj);save();close();toast("Doutora salva.");};
 $("#del").onclick=()=>{let id=$("#id").value;if(id&&confirm("Excluir esta doutora?")){leads=leads.filter(x=>x.id!==id);save();close();toast("Excluída.")}};
 
-async function aiCall(mode){
- let id=$("#id").value; if(!id){toast("Salve a doutora antes de usar a IA.");return}
- let lead=leads.find(x=>x.id===id); if(!lead){toast("Salve a doutora antes de usar a IA.");return}
- $("#aiResult").classList.remove("hidden");$("#aiResult").textContent="Analisando…";
- try{let r=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode,lead})});let j=await r.json();if(!r.ok)throw new Error(j.error||"Erro na IA");$("#aiResult").textContent=j.text||"Sem resposta.";if(j.fields){
-  for(const [k,v] of Object.entries(j.fields)){
-    if($("#"+k) && v !== null && v !== undefined && String(v).trim() !== "") $("#"+k).value=v;
-  }
-  if(j.fields.message && $("#message")) $("#message").value=j.fields.message;
-  if(j.fields.nextAction && $("#nextAction")) $("#nextAction").value=j.fields.nextAction;
-  if(j.fields.obs && $("#obs")) $("#obs").value=j.fields.obs;
-  guidance();
-  saveLeadSilent();
-}}
- catch(e){$("#aiResult").textContent="Não foi possível usar a IA agora.\n\n"+e.message+"\n\nSe você acabou de publicar no Vercel, confira se OPENAI_API_KEY está configurada em Settings → Environment Variables e faça um novo deploy."}}
-function saveLeadSilent(){
- let id=$("#id").value;if(!id)return;
- let base=leads.find(x=>x.id===id)||{};
- let obj={...base,
-   name:$("#name").value.trim(),ig:$("#ig").value.trim(),type:$("#type").value,
-   niche:$("#niche").value.trim(),city:$("#city").value.trim(),contact:$("#contact").value.trim(),
-   ad:$("#ad").value,priority:$("#priority").value,status:$("#status").value,
-   follow:$("#follow").value,obs:$("#obs").value.trim(),last:$("#last").value.trim(),
-   nextAction:$("#nextAction").value.trim(),message:$("#message").value.trim(),notes:$("#notes").value.trim(),
-   adImages:imgs.ad,profileImages:imgs.profile,chatImages:imgs.chat
+function currentFormLead(){
+ return {
+  id:$("#id").value || null,
+  name:$("#name").value.trim(),ig:$("#ig").value.trim(),type:$("#type").value,
+  niche:$("#niche").value.trim(),city:$("#city").value.trim(),contact:$("#contact").value.trim(),
+  ad:$("#ad").value,priority:$("#priority").value,status:$("#status").value,
+  follow:$("#follow").value,obs:$("#obs").value.trim(),last:$("#last").value.trim(),
+  nextAction:$("#nextAction").value.trim(),message:$("#message").value.trim(),notes:$("#notes").value.trim(),
+  adImages:imgs.ad,profileImages:imgs.profile,chatImages:imgs.chat
  };
- leads=leads.map(x=>x.id===id?obj:x);localStorage.setItem(KEY,JSON.stringify(leads));render();
 }
-$("#analyze").onclick=()=>aiCall("analyze");$("#coach").onclick=()=>aiCall("coach");
+
+async function aiCall(mode){
+ if(mode==="analyze" && !imgs.ad.length && !imgs.profile.length && !imgs.chat.length){
+   toast("Suba pelo menos um print antes de ler com IA.");
+   return;
+ }
+ if(mode==="coach" && !$("#id").value){
+   toast("Salve a doutora primeiro. A mensagem é uma etapa separada.");
+   return;
+ }
+ let lead=currentFormLead();
+ if(mode==="coach"){
+   const saved=leads.find(x=>x.id===lead.id);
+   if(saved) lead={...saved, ...lead};
+ }
+ $("#aiResult").classList.remove("hidden");
+ $("#aiResult").textContent=mode==="analyze"?"Lendo prints e preenchendo os dados…":"Pensando na mensagem…";
+ try{
+   let r=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode,lead})});
+   let j=await r.json();
+   if(!r.ok) throw new Error(j.error||"Erro na IA");
+
+   if(mode==="analyze" && j.fields){
+     const allowed=["name","ig","type","niche","city","contact","ad","priority","obs","nextAction"];
+     for(const k of allowed){
+       const v=j.fields[k];
+       if($("#"+k) && v !== null && v !== undefined && String(v).trim() !== ""){
+         $("#"+k).value=v;
+       }
+     }
+     guidance();
+     $("#aiText").textContent="Dados preenchidos pela IA. Confira rapidamente e clique em “Salvar doutora”.";
+     $("#aiResult").textContent=j.text||"Dados preenchidos. Confira e salve.";
+     toast("Dados preenchidos. Confira e salve a doutora.");
+   } else if(mode==="coach"){
+     if(j.fields?.message && $("#message")) $("#message").value=j.fields.message;
+     $("#aiResult").textContent=j.text||j.fields?.message||"Sem sugestão.";
+     if(j.fields?.message) toast("Mensagem sugerida. Confira e adapte se quiser.");
+   } else {
+     $("#aiResult").textContent=j.text||"Sem resposta.";
+   }
+ }catch(e){
+   $("#aiResult").textContent="Não foi possível usar a IA agora.\n\n"+e.message+"\n\nConfira se OPENAI_API_KEY está configurada no Vercel e se o deployment mais recente está ativo.";
+ }
+}
+$("#analyze").onclick=()=>aiCall("analyze");
+$("#coach").onclick=()=>aiCall("coach");
 
 function toast(s){let t=$("#toast");t.textContent=s;t.className="toast";setTimeout(()=>t.className="hidden",2200)}
 function csvEsc(v){return`"${String(v??"").replace(/"/g,'""')}"`}
