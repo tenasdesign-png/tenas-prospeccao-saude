@@ -3,6 +3,7 @@ export default async function handler(req, res) {
   if (!process.env.OPENAI_API_KEY) {
     return res.status(500).json({ error: "OPENAI_API_KEY não configurada no Vercel." });
   }
+
   try {
     const { mode, lead } = req.body || {};
     if (!lead) return res.status(400).json({ error: "Lead ausente." });
@@ -11,31 +12,33 @@ export default async function handler(req, res) {
       ...(lead.adImages || []).map((x) => ({ label: "ANÚNCIO", data: x })),
       ...(lead.profileImages || []).map((x) => ({ label: "PERFIL", data: x })),
       ...(lead.chatImages || []).map((x) => ({ label: "CONVERSA", data: x }))
-    ].slice(0, 12);
+    ].slice(0, 8);
 
     const context = `
 Você é o "Hormozi Mentor (Não oficial)", um coach de negócios direto, prático e orientado a dados.
 Você NÃO é Alex Hormozi. Não diga que é Alex Hormozi.
-IMPORTANTE: a resposta desta etapa deve ser JSON válido (json).
-Contexto da Geovanna:
-- jornalista e social media há quase 10 anos;
-- empresa Tenas Digital;
-- foco: profissionais da saúde;
-- objetivo imediato: gerar caixa e encontrar compradoras;
-- avatar principal: mulheres da saúde com pelo menos 3 anos de atuação, faturamento acima de R$20 mil, sem tempo para cuidar do marketing;
-- capacidade atual: até 5 clientes;
-- meta de sobrevivência: R$5 mil/mês.
-Regra comercial:
-A = anuncia + perfil ruim + encaixa no avatar => abordar imediatamente.
-B = não anuncia + perfil ruim + avatar perfeito => observar alguns dias e abordar.
+Responda em português.
+IMPORTANTE: nesta chamada, sua resposta final deve ser SOMENTE um objeto JSON válido, sem markdown, sem cercas de código e sem texto antes/depois.
+
+Contexto:
+- Geovanna é jornalista e social media há quase 10 anos.
+- Empresa: Tenas Digital.
+- Foco: profissionais da saúde.
+- Avatar principal: mulheres da saúde com pelo menos 3 anos de atuação, faturamento acima de R$20 mil e pouco tempo para cuidar do marketing.
+- Objetivo imediato: gerar caixa e encontrar compradoras.
+- Capacidade atual: até 5 clientes.
+- Meta: R$5 mil/mês.
+
+Regras comerciais:
+A = anuncia + perfil ruim + fit => abordar imediatamente.
+B = não anuncia + perfil ruim + fit => observar alguns dias e abordar.
 C = perfil bom + já tem equipe/agência => não perder tempo.
-Tom de prospecção: curto, humano, direto. Sem diagnóstico grátis. A mensagem-base é:
-"Oi, Dra. [Nome]! Sou a Geovanna, jornalista, e trabalho há quase 10 anos com comunicação — hoje focada em profissionais da saúde.
-Você já tem alguém cuidando do seu Instagram ou essa parte ainda fica por sua conta?"
+
+Nunca invente dados. Se algo não estiver visível, deixe vazio ou "não identificado".
 `;
 
     const leadText = `
-DADOS CADASTRADOS:
+DADOS ATUAIS DA FICHA:
 Nome: ${lead.name || ""}
 Instagram: ${lead.ig || ""}
 Profissão: ${lead.type || ""}
@@ -43,65 +46,71 @@ Especialidade: ${lead.niche || ""}
 Cidade: ${lead.city || ""}
 Contato: ${lead.contact || ""}
 Anúncio: ${lead.ad || ""}
-Prioridade atual: ${lead.priority || ""}
+Prioridade: ${lead.priority || ""}
 Status: ${lead.status || ""}
 Observação: ${lead.obs || ""}
-Última ação: ${lead.last || ""}
 Próxima ação: ${lead.nextAction || ""}
-Mensagem usada/sugerida: ${lead.message || ""}
+Mensagem: ${lead.message || ""}
 Notas: ${lead.notes || ""}
 `;
 
     let content = [{ type: "input_text", text: context + "\n" + leadText }];
+
     for (const im of images) {
-      content.push({ type: "input_text", text: `A imagem seguinte pertence à categoria ${im.label}. Analise apenas o que for visível e relevante.` });
+      content.push({
+        type: "input_text",
+        text: `A próxima imagem é da categoria ${im.label}. Leia somente informações realmente visíveis.`
+      });
       content.push({ type: "input_image", image_url: im.data });
     }
 
     const task = mode === "coach"
-      ? `A doutora já foi salva. Agora atue como o "Hormozi Mentor (Não oficial)" e ajude a Geovanna SOMENTE com a mensagem comercial.
-Responda em português e seja curto, humano e direto.
-Analise os dados salvos, os prints e, se houver, os prints da conversa.
-Se ainda não existe conversa, escreva UMA mensagem de primeira abordagem personalizada.
-Se já existe conversa, escreva a próxima resposta mais adequada ao estágio.
-Não ofereça auditoria, diagnóstico, dica grátis, material grátis ou elogios vazios.
-Use a experiência da Geovanna (jornalista, quase 10 anos com comunicação, foco em saúde) como contexto, sem exagerar.
+      ? `
+ETAPA 2 — MENSAGEM.
+A doutora já foi salva. Analise os dados salvos, os prints e, se houver, a conversa.
+Escreva UMA mensagem comercial curta, humana e direta.
+Se não existe conversa, faça uma primeira abordagem.
+Se já existe conversa, escreva a próxima resposta.
+Não ofereça auditoria, diagnóstico grátis, material grátis ou elogios vazios.
+Use a experiência da Geovanna (jornalista, quase 10 anos com comunicação, foco em saúde) como contexto.
 Não invente informações.
-Retorne SOMENTE um objeto json válido. Não use markdown, não use ```json e não escreva texto fora do objeto json.
-Retorne JSON válido com:
-fields: {message}
-text: string explicando em 1-3 linhas por que essa mensagem faz sentido.`
-      : `FASE 1 — LEITURA E PREENCHIMENTO.
-Analise os prints do PERFIL e do ANÚNCIO e preencha automaticamente os dados da ficha.
-NÃO escreva mensagem de prospecção nesta etapa. A mensagem será solicitada separadamente depois que a doutora for salva.
-Identifique, somente quando houver evidência suficiente:
-- nome, @, profissão, especialidade, cidade e contato;
-- se há anúncio;
-- sinais de que existe social media/agência;
-- qualidade/clareza do posicionamento;
-- fit com o avatar;
-- prioridade A/B/C.
-Depois dê um direcionamento comercial curto.
-Não invente informações. Se algo não estiver visível, deixe vazio ou diga "não identificado".
-Retorne SOMENTE um objeto json válido. Não use markdown, não use ```json e não escreva texto fora do objeto json.
-Retorne JSON válido com:
-fields: {name,ig,type,niche,city,contact,ad,priority,obs,nextAction}
-text: string com resumo do que foi identificado e a próxima ação.
 
-REGRAS IMPORTANTES:
-- Leia BIO, nome do perfil, texto do anúncio, legenda, botões, endereço, telefone e qualquer texto visível.
-- Cidade: preencha SOMENTE se estiver explicitamente visível ou puder ser lida com segurança. Nunca adivinhe.
-- Nome e @: extraia somente quando estiverem visíveis.
-- Profissão/especialidade: preencha somente quando houver evidência.
-- Anúncio: "sim" se houver evidência de anúncio; "nao" se o print mostrar claramente que não é anúncio; caso contrário, preserve o dado existente.
-- priority: A = anuncia + perfil ruim + fit; B = sem anúncio + perfil ruim + fit; C = perfil bom + equipe/agência.
-- nextAction: ação comercial concreta e curta, como "Abordar agora por DM", "Observar alguns dias e abordar" ou "Não abordar; já tem equipe".
-- NÃO inclua "message" no retorno desta fase.
+Retorne exatamente:
+{"fields":{"message":"..."},"text":"..."}
+`
+      : `
+ETAPA 1 — LEITURA DOS PRINTS.
+Analise principalmente PERFIL e ANÚNCIO e preencha a ficha automaticamente.
+
+Identifique somente com evidência visível:
+- nome
+- Instagram/@
+- profissão
+- especialidade
+- cidade/UF
+- contato
+- se há anúncio
+- sinais de social media/agência
+- qualidade/clareza do posicionamento
+- fit com o avatar
+- prioridade A/B/C
+- próxima ação comercial
+
+Leia BIO, nome, texto do anúncio, legenda, botões, endereço, telefone e textos visíveis.
+Cidade só pode ser preenchida se estiver explícita ou puder ser lida com segurança.
+Não adivinhe.
+
+Retorne exatamente neste formato:
+{"fields":{"name":"","ig":"","type":"","niche":"","city":"","contact":"","ad":"","priority":"","obs":"","nextAction":""},"text":"resumo curto"}
+
+Não inclua mensagem de prospecção nesta etapa.
 `;
+
+    content[0].text += "\n" + task;
+
     const body = {
       model: process.env.OPENAI_MODEL || "gpt-5.6-luna",
-      input: [{ role: "user", content }],
-      text: { format: { type: "json_object" } }
+      input: [{ role: "user", content }]
     };
 
     const r = await fetch("https://api.openai.com/v1/responses", {
@@ -112,20 +121,45 @@ REGRAS IMPORTANTES:
       },
       body: JSON.stringify(body)
     });
-    const data = await r.json();
-    if (!r.ok) return res.status(r.status).json({ error: data?.error?.message || "Erro da API." });
+
+    const raw = await r.text();
+    let data = {};
+    try { data = JSON.parse(raw); } catch (_) {}
+
+    if (!r.ok) {
+      const msg = data?.error?.message || raw || `OpenAI retornou HTTP ${r.status}.`;
+      return res.status(502).json({ error: msg });
+    }
 
     const text = data.output_text || "";
-    if (mode === "analyze") {
-      try {
-        const parsed = JSON.parse(text);
-        return res.status(200).json({ fields: parsed.fields || {}, text: parsed.text || "" });
-      } catch {
-        return res.status(200).json({ fields: {}, text });
+    if (!text) {
+      return res.status(502).json({ error: "A OpenAI não retornou texto. Tente novamente." });
+    }
+
+    // Aceita JSON puro ou JSON dentro de markdown, sem quebrar a interface.
+    let parsed = null;
+    try {
+      parsed = JSON.parse(text.trim());
+    } catch (_) {
+      const match = text.match(/\{[\s\S]*\}/);
+      if (match) {
+        try { parsed = JSON.parse(match[0]); } catch (_) {}
       }
     }
-    return res.status(200).json({ fields: (()=>{ try { return JSON.parse(text)?.fields || {}; } catch { return {}; } })(), text: (()=>{ try { return JSON.parse(text)?.text || text; } catch { return text; } })() });
+
+    if (!parsed) {
+      return res.status(502).json({
+        error: "A IA respondeu em um formato inesperado.",
+        raw: text.slice(0, 1200)
+      });
+    }
+
+    return res.status(200).json({
+      fields: parsed.fields || {},
+      text: parsed.text || ""
+    });
   } catch (e) {
-    return res.status(500).json({ error: e.message || "Erro inesperado." });
+    console.error(e);
+    return res.status(500).json({ error: e?.message || "Erro inesperado no servidor." });
   }
 }
