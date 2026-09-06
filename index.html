@@ -102,7 +102,31 @@ function nav(v){$$(".view").forEach(x=>x.classList.remove("active"));$("#"+v).cl
 $$(".nav button").forEach(b=>b.onclick=()=>nav(b.dataset.view));$("#allTasks").onclick=()=>nav("tasks");
 $("#sf").innerHTML='<option value="">Todos os status</option>'+STATUS.map(s=>`<option>${s}</option>`).join("");["q","sf","pf","af","tf"].forEach(id=>$("#"+id).addEventListener("input",renderTable));
 
-function dataURL(file){return new Promise((res,rej)=>{let r=new FileReader;r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(file)})}
+function dataURL(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>{
+      const src=reader.result;
+      const img=new Image();
+      img.onload=()=>{
+        const MAX=1600;
+        let w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+        if(w>MAX||h>MAX){
+          const scale=Math.min(MAX/w,MAX/h); w=Math.round(w*scale); h=Math.round(h*scale);
+        }
+        const c=document.createElement("canvas");
+        c.width=w; c.height=h;
+        const ctx=c.getContext("2d");
+        ctx.drawImage(img,0,0,w,h);
+        resolve(c.toDataURL("image/jpeg",0.78));
+      };
+      img.onerror=()=>resolve(src);
+      img.src=src;
+    };
+    reader.onerror=reject;
+    reader.readAsDataURL(file);
+  });
+}
 async function addImgs(type,files){for(let f of files){if(imgs[type].length>=8)break;imgs[type].push(await dataURL(f))}preview(type)}
 function preview(type){let el=$("#"+type+"Preview"),count=$("#"+type+"Count");el.innerHTML=imgs[type].map((src,i)=>`<div class="preview"><img src="${src}"><button type="button" onclick="imgs['${type}'].splice(${i},1);preview('${type}')">×</button></div>`).join("");count.textContent=imgs[type].length?`${imgs[type].length} imagem(ns) carregada(s) — usada(s) também na análise por IA.`:"Nenhuma imagem."}
 $("#adImg").onchange=e=>addImgs("ad",[...e.target.files]);$("#profileImg").onchange=e=>addImgs("profile",[...e.target.files]);$("#chatImg").onchange=e=>addImgs("chat",[...e.target.files]);
@@ -146,7 +170,10 @@ async function aiCall(mode){
  $("#aiResult").textContent=mode==="analyze"?"Lendo prints e preenchendo os dados…":"Pensando na mensagem…";
  try{
    let r=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode,lead})});
-   let j=await r.json();
+   const raw=await r.text();
+   let j;
+   try{ j=JSON.parse(raw); }
+   catch(_){ throw new Error(raw || `Erro HTTP ${r.status}`); }
    if(!r.ok) throw new Error(j.error||"Erro na IA");
 
    if(mode==="analyze" && j.fields){
