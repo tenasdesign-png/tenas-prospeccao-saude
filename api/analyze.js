@@ -16,6 +16,7 @@ export default async function handler(req, res) {
     const context = `
 Você é o "Hormozi Mentor (Não oficial)", um coach de negócios direto, prático e orientado a dados.
 Você NÃO é Alex Hormozi. Não diga que é Alex Hormozi.
+IMPORTANTE: a resposta desta etapa deve ser JSON válido (json).
 Contexto da Geovanna:
 - jornalista e social media há quase 10 anos;
 - empresa Tenas Digital;
@@ -58,43 +59,49 @@ Notas: ${lead.notes || ""}
     }
 
     const task = mode === "coach"
-      ? `Dê direcionamento comercial direto para esta lead. Responda em português, curto e acionável.
-Inclua:
-1) Diagnóstico em 2-4 linhas.
-2) Por que vale ou não vale abordar.
-3) Próxima ação exata.
-4) Mensagem exata a enviar agora, se aplicável.
-5) O que NÃO fazer.
-Não ofereça conteúdo grátis nem auditoria gratuita.
-Se a lead já respondeu, analise a conversa e escreva a próxima resposta.
-Se ainda não respondeu, respeite o estágio e sugira follow-up quando apropriado.`
-      : `Analise os prints e os dados. Identifique, somente quando houver evidência suficiente:
-- @, nome, profissão, especialidade, cidade e contato;
+      ? `A doutora já foi salva. Agora atue como o "Hormozi Mentor (Não oficial)" e ajude a Geovanna SOMENTE com a mensagem comercial.
+Responda em português e seja curto, humano e direto.
+Analise os dados salvos, os prints e, se houver, os prints da conversa.
+Se ainda não existe conversa, escreva UMA mensagem de primeira abordagem personalizada.
+Se já existe conversa, escreva a próxima resposta mais adequada ao estágio.
+Não ofereça auditoria, diagnóstico, dica grátis, material grátis ou elogios vazios.
+Use a experiência da Geovanna (jornalista, quase 10 anos com comunicação, foco em saúde) como contexto, sem exagerar.
+Não invente informações.
+Retorne SOMENTE um objeto json válido. Não use markdown, não use ```json e não escreva texto fora do objeto json.
+Retorne JSON válido com:
+fields: {message}
+text: string explicando em 1-3 linhas por que essa mensagem faz sentido.`
+      : `FASE 1 — LEITURA E PREENCHIMENTO.
+Analise os prints do PERFIL e do ANÚNCIO e preencha automaticamente os dados da ficha.
+NÃO escreva mensagem de prospecção nesta etapa. A mensagem será solicitada separadamente depois que a doutora for salva.
+Identifique, somente quando houver evidência suficiente:
+- nome, @, profissão, especialidade, cidade e contato;
 - se há anúncio;
 - sinais de que existe social media/agência;
 - qualidade/clareza do posicionamento;
 - fit com o avatar;
 - prioridade A/B/C.
-Depois dê direcionamento comercial curto.
+Depois dê um direcionamento comercial curto.
 Não invente informações. Se algo não estiver visível, deixe vazio ou diga "não identificado".
-Retorne JSON válido com as chaves:
-fields: {name,ig,type,niche,city,contact,ad,priority,obs,message,nextAction}
-text: string com análise e próxima ação.
+Retorne SOMENTE um objeto json válido. Não use markdown, não use ```json e não escreva texto fora do objeto json.
+Retorne JSON válido com:
+fields: {name,ig,type,niche,city,contact,ad,priority,obs,nextAction}
+text: string com resumo do que foi identificado e a próxima ação.
 
-REGRAS IMPORTANTES PARA PREENCHIMENTO:
-- Leia com atenção BIO, nome do perfil, texto do anúncio, legenda, botões, endereço, telefone e qualquer texto visível nas imagens.
-- Cidade: preencha SOMENTE se a cidade/UF estiver explicitamente visível ou puder ser lida com segurança. Se não estiver, deixe vazio.
-- Nome e @: extraia do perfil/anúncio somente quando estiverem visíveis.
-- Mensagem: SEMPRE gere uma mensagem curta e direta para a primeira abordagem, sem oferecer auditoria, diagnóstico, análise grátis, material grátis ou qualquer "posso te dar uma dica". Use a experiência da Geovanna como contexto. Exemplo de estrutura: "Oi, Dra. [Nome]! Sou a Geovanna, jornalista, e trabalho há quase 10 anos com comunicação — hoje focada em profissionais da saúde. Você já tem alguém cuidando do seu Instagram ou essa parte ainda fica por sua conta?"
-- Se o nome estiver identificado, personalize a saudação. Se não estiver, use "Oi, Dra.!".
-- Não invente cidade, profissão, especialidade ou qualquer outro dado.
-- nextAction deve ser uma ação comercial concreta e curta, por exemplo "Abordar agora por DM" ou "Não abordar; já tem agência".
-- priority deve seguir A/B/C usando as regras comerciais dadas no contexto.`;
-
+REGRAS IMPORTANTES:
+- Leia BIO, nome do perfil, texto do anúncio, legenda, botões, endereço, telefone e qualquer texto visível.
+- Cidade: preencha SOMENTE se estiver explicitamente visível ou puder ser lida com segurança. Nunca adivinhe.
+- Nome e @: extraia somente quando estiverem visíveis.
+- Profissão/especialidade: preencha somente quando houver evidência.
+- Anúncio: "sim" se houver evidência de anúncio; "nao" se o print mostrar claramente que não é anúncio; caso contrário, preserve o dado existente.
+- priority: A = anuncia + perfil ruim + fit; B = sem anúncio + perfil ruim + fit; C = perfil bom + equipe/agência.
+- nextAction: ação comercial concreta e curta, como "Abordar agora por DM", "Observar alguns dias e abordar" ou "Não abordar; já tem equipe".
+- NÃO inclua "message" no retorno desta fase.
+`;
     const body = {
       model: process.env.OPENAI_MODEL || "gpt-5.6-luna",
       input: [{ role: "user", content }],
-      ...(mode === "analyze" ? { text: { format: { type: "json_object" } } } : {})
+      text: { format: { type: "json_object" } }
     };
 
     const r = await fetch("https://api.openai.com/v1/responses", {
@@ -117,7 +124,7 @@ REGRAS IMPORTANTES PARA PREENCHIMENTO:
         return res.status(200).json({ fields: {}, text });
       }
     }
-    return res.status(200).json({ text });
+    return res.status(200).json({ fields: (()=>{ try { return JSON.parse(text)?.fields || {}; } catch { return {}; } })(), text: (()=>{ try { return JSON.parse(text)?.text || text; } catch { return text; } })() });
   } catch (e) {
     return res.status(500).json({ error: e.message || "Erro inesperado." });
   }
