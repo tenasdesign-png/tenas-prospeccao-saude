@@ -120,9 +120,30 @@ async function aiCall(mode){
  let id=$("#id").value; if(!id){toast("Salve a doutora antes de usar a IA.");return}
  let lead=leads.find(x=>x.id===id); if(!lead){toast("Salve a doutora antes de usar a IA.");return}
  $("#aiResult").classList.remove("hidden");$("#aiResult").textContent="Analisando…";
- try{let r=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode,lead})});let j=await r.json();if(!r.ok)throw new Error(j.error||"Erro na IA");$("#aiResult").textContent=j.text||"Sem resposta.";if(j.fields){for(const [k,v] of Object.entries(j.fields)){if($("#"+k)&&v)$("#"+k).value=v}guidance();saveLeadSilent()}}
+ try{let r=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode,lead})});let j=await r.json();if(!r.ok)throw new Error(j.error||"Erro na IA");$("#aiResult").textContent=j.text||"Sem resposta.";if(j.fields){
+  for(const [k,v] of Object.entries(j.fields)){
+    if($("#"+k) && v !== null && v !== undefined && String(v).trim() !== "") $("#"+k).value=v;
+  }
+  if(j.fields.message && $("#message")) $("#message").value=j.fields.message;
+  if(j.fields.nextAction && $("#nextAction")) $("#nextAction").value=j.fields.nextAction;
+  if(j.fields.obs && $("#obs")) $("#obs").value=j.fields.obs;
+  guidance();
+  saveLeadSilent();
+}}
  catch(e){$("#aiResult").textContent="Não foi possível usar a IA agora.\n\n"+e.message+"\n\nSe você acabou de publicar no Vercel, confira se OPENAI_API_KEY está configurada em Settings → Environment Variables e faça um novo deploy."}}
-function saveLeadSilent(){let id=$("#id").value;if(!id)return;let obj={...leads.find(x=>x.id===id),name:$("#name").value.trim(),ig:$("#ig").value.trim(),type:$("#type").value,niche:$("#niche").value.trim(),city:$("#city").value.trim(),contact:$("#contact").value.trim(),ad:$("#ad").value,priority:$("#priority").value,status:$("#status").value,obs:$("#obs").value.trim()};leads=leads.map(x=>x.id===id?obj:x);localStorage.setItem(KEY,JSON.stringify(leads));render()}
+function saveLeadSilent(){
+ let id=$("#id").value;if(!id)return;
+ let base=leads.find(x=>x.id===id)||{};
+ let obj={...base,
+   name:$("#name").value.trim(),ig:$("#ig").value.trim(),type:$("#type").value,
+   niche:$("#niche").value.trim(),city:$("#city").value.trim(),contact:$("#contact").value.trim(),
+   ad:$("#ad").value,priority:$("#priority").value,status:$("#status").value,
+   follow:$("#follow").value,obs:$("#obs").value.trim(),last:$("#last").value.trim(),
+   nextAction:$("#nextAction").value.trim(),message:$("#message").value.trim(),notes:$("#notes").value.trim(),
+   adImages:imgs.ad,profileImages:imgs.profile,chatImages:imgs.chat
+ };
+ leads=leads.map(x=>x.id===id?obj:x);localStorage.setItem(KEY,JSON.stringify(leads));render();
+}
 $("#analyze").onclick=()=>aiCall("analyze");$("#coach").onclick=()=>aiCall("coach");
 
 function toast(s){let t=$("#toast");t.textContent=s;t.className="toast";setTimeout(()=>t.className="hidden",2200)}

@@ -72,3 +72,11 @@ Para uma V4 profissional:
 
 ## Limite das imagens
 A IA recebe até 12 imagens por análise para evitar chamadas exageradamente grandes.
+
+
+## V3.1 — correções da IA
+- A análise agora retorna também `message` e `nextAction`.
+- A mensagem sugerida é preenchida automaticamente no campo de mensagem.
+- A IA tenta ler cidade/UF a partir de bio, anúncio, endereço e demais textos visíveis, sem inventar.
+- A gravação automática preserva mensagem, próxima ação, observações, follow-up e prints.
+- Se a cidade não estiver visível com segurança, o campo permanece vazio.
