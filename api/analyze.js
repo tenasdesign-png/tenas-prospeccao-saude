@@ -1,7 +1,7 @@
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-  if (!process.env.OPENAI_API_KEY) {
-    return res.status(500).json({ error: "OPENAI_API_KEY não configurada no Vercel." });
+  if (!process.env.GEMINI_API_KEY) {
+    return res.status(500).json({ error: "GEMINI_API_KEY não configurada no Vercel." });
   }
 
   try {
@@ -18,7 +18,7 @@ export default async function handler(req, res) {
 Você é o "Hormozi Mentor (Não oficial)", um coach de negócios direto, prático e orientado a dados.
 Você NÃO é Alex Hormozi. Não diga que é Alex Hormozi.
 Responda em português.
-IMPORTANTE: nesta chamada, sua resposta final deve ser SOMENTE um objeto JSON válido, sem markdown, sem cercas de código e sem texto antes/depois.
+IMPORTANTE: sua resposta final deve ser SOMENTE um objeto JSON válido, sem markdown, sem cercas de código e sem texto antes/depois.
 
 Contexto:
 - Geovanna é jornalista e social media há quase 10 anos.
@@ -53,16 +53,6 @@ Próxima ação: ${lead.nextAction || ""}
 Mensagem: ${lead.message || ""}
 Notas: ${lead.notes || ""}
 `;
-
-    let content = [{ type: "input_text", text: context + "\n" + leadText }];
-
-    for (const im of images) {
-      content.push({
-        type: "input_text",
-        text: `A próxima imagem é da categoria ${im.label}. Leia somente informações realmente visíveis.`
-      });
-      content.push({ type: "input_image", image_url: im.data });
-    }
 
     const task = mode === "coach"
       ? `
@@ -106,19 +96,30 @@ Retorne exatamente neste formato:
 Não inclua mensagem de prospecção nesta etapa.
 `;
 
-    content[0].text += "\n" + task;
+    const parts = [{ text: context + "\n" + leadText + "\n" + task }];
+
+    for (const im of images) {
+      if (!im.data) continue;
+      const match = /^data:(.+?);base64,(.+)$/.exec(im.data);
+      if (!match) continue;
+      const [, mimeType, base64Data] = match;
+      parts.push({ text: `A próxima imagem é da categoria ${im.label}. Leia somente informações realmente visíveis.` });
+      parts.push({ inlineData: { mimeType, data: base64Data } });
+    }
+
+    const model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
 
     const body = {
-      model: process.env.OPENAI_MODEL || "gpt-5.6-luna",
-      input: [{ role: "user", content }]
+      contents: [{ role: "user", parts }],
+      generationConfig: {
+        responseMimeType: "application/json"
+      }
     };
 
-    const r = await fetch("https://api.openai.com/v1/responses", {
+    const r = await fetch(url, {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
 
@@ -127,16 +128,15 @@ Não inclua mensagem de prospecção nesta etapa.
     try { data = JSON.parse(raw); } catch (_) {}
 
     if (!r.ok) {
-      const msg = data?.error?.message || raw || `OpenAI retornou HTTP ${r.status}.`;
+      const msg = data?.error?.message || raw || `Gemini retornou HTTP ${r.status}.`;
       return res.status(502).json({ error: msg });
     }
 
-    const text = data.output_text || "";
+    const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
     if (!text) {
-      return res.status(502).json({ error: "A OpenAI não retornou texto. Tente novamente." });
+      return res.status(502).json({ error: "A IA não retornou texto. Tente novamente." });
     }
 
-    // Aceita JSON puro ou JSON dentro de markdown, sem quebrar a interface.
     let parsed = null;
     try {
       parsed = JSON.parse(text.trim());
