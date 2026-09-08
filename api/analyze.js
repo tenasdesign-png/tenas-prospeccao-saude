@@ -108,7 +108,7 @@ Não inclua mensagem de prospecção nesta etapa.
     }
 
     const primaryModel = process.env.GEMINI_MODEL || "gemini-flash-latest";
-    const fallbackModel = process.env.GEMINI_FALLBACK_MODEL || "gemini-pro-latest";
+    const fallbackModel = process.env.GEMINI_FALLBACK_MODEL || "gemini-flash-lite-latest";
     // Tenta o modelo principal com 2 retries (backoff curto), depois cai para um modelo alternativo
     // quando o erro é de sobrecarga/indisponibilidade temporária (429/503 ou "overloaded"/"high demand").
     const modelsToTry = [primaryModel, primaryModel, fallbackModel];
