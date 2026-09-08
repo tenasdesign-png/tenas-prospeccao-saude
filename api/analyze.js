@@ -107,8 +107,11 @@ Não inclua mensagem de prospecção nesta etapa.
       parts.push({ inlineData: { mimeType, data: base64Data } });
     }
 
-    const model = process.env.GEMINI_MODEL || "gemini-3.6-flash";
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
+    const primaryModel = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+    const fallbackModel = process.env.GEMINI_FALLBACK_MODEL || "gemini-2.5-flash";
+    // Tenta o modelo principal com 2 retries (backoff curto), depois cai para um modelo alternativo
+    // quando o erro é de sobrecarga/indisponibilidade temporária (429/503 ou "overloaded"/"high demand").
+    const modelsToTry = [primaryModel, primaryModel, fallbackModel];
 
     const body = {
       contents: [{ role: "user", parts }],
@@ -117,19 +120,31 @@ Não inclua mensagem de prospecção nesta etapa.
       }
     };
 
-    const r = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
+    let r, raw, data = {};
+    for (let attempt = 0; attempt < modelsToTry.length; attempt++) {
+      const model = modelsToTry[attempt];
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
+      r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      raw = await r.text();
+      data = {};
+      try { data = JSON.parse(raw); } catch (_) {}
 
-    const raw = await r.text();
-    let data = {};
-    try { data = JSON.parse(raw); } catch (_) {}
+      if (r.ok) break;
+
+      const errMsg = (data?.error?.message || raw || "").toLowerCase();
+      const isOverloaded = r.status === 429 || r.status === 503 || errMsg.includes("overloaded") || errMsg.includes("high demand");
+      const isLastAttempt = attempt === modelsToTry.length - 1;
+      if (!isOverloaded || isLastAttempt) break;
+      await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)));
+    }
 
     if (!r.ok) {
       const msg = data?.error?.message || raw || `Gemini retornou HTTP ${r.status}.`;
-      return res.status(502).json({ error: msg });
+      return res.status(502).json({ error: `${msg} (tentei novamente automaticamente sem sucesso — tente de novo em alguns segundos)` });
     }
 
     const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
