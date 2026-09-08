@@ -1,167 +1,212 @@
-export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-  if (!process.env.GEMINI_API_KEY) {
-    return res.status(500).json({ error: "GEMINI_API_KEY não configurada no Vercel." });
-  }
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tenas • Prospecção Saúde V3</title>
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--ink:#20242a;--muted:#707780;--line:#e4e7eb;--pink:#9b4d6a;--pink2:#6f334b;--green:#2d8766;--amber:#b17b20;--red:#b74e4e;--blue:#4778a8;--shadow:0 8px 30px rgba(20,25,30,.06)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px Inter,system-ui,-apple-system,Segoe UI,sans-serif}button,input,select,textarea{font:inherit}button{cursor:pointer}
+.app{min-height:100vh;display:flex}.side{position:fixed;inset:0 auto 0 0;width:245px;background:#fff;border-right:1px solid var(--line);padding:22px 15px}.brand{font-weight:900;font-size:20px;padding:8px 10px 24px}.brand span{display:block;color:var(--pink)}.nav button{display:block;width:100%;border:0;background:transparent;text-align:left;padding:11px 12px;border-radius:9px;margin:3px 0;color:#555;font-weight:700}.nav button.active,.nav button:hover{background:#f7edf1;color:var(--pink2)}
+.main{margin-left:245px;width:calc(100% - 245px);max-width:1650px;padding:26px}.top{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:20px}.top h1{margin:0;font-size:27px}.top p{margin:5px 0;color:var(--muted)}.actions{display:flex;gap:8px;flex-wrap:wrap}.btn{border:1px solid var(--line);background:#fff;padding:9px 13px;border-radius:9px;font-weight:750}.primary{background:var(--pink);border-color:var(--pink);color:#fff}.dark{background:#20242a;color:#fff;border-color:#20242a}
+.cards{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:17px}.card,.panel,.rule{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}.card{padding:15px}.label{font-size:11px;color:var(--muted)}.metric{font-size:26px;font-weight:900;margin-top:4px}.sub{font-size:11px;color:var(--muted);margin-top:3px}
+.rules{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:17px}.rule{padding:14px 16px}.rule h3{margin:0 0 7px;font-size:14px}.rule p{margin:4px 0;color:#555;line-height:1.42}.rule b{color:var(--ink)}.badge{display:inline-flex;padding:5px 8px;border-radius:99px;font-size:11px;font-weight:850;white-space:nowrap}.A{background:#f8e7ed;color:#863c59}.B{background:#fff2d7;color:#91671d}.C{background:#edf1f4;color:#66717b}.st{background:#f0f2f5;color:#5c6570}.reply{background:#e7f4ed;color:#277052}.meeting{background:#e7f0f8;color:#35678f}.proposal{background:#f2e9f8;color:#754d8b}.won{background:#e1f5e9;color:#23704d}.lost{background:#fae9e9;color:#984343}
+.layout{display:grid;grid-template-columns:1.4fr .8fr;gap:16px}.panel{overflow:hidden}.head{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px}.head h2{font-size:15px;margin:0}.small{font-size:12px;color:var(--muted)}.funnel{padding:15px 16px;display:grid;gap:9px}.frow{display:grid;grid-template-columns:125px 1fr 30px;gap:8px;align-items:center;font-size:12px}.bar{height:8px;background:#eceef1;border-radius:99px;overflow:hidden}.bar i{height:100%;display:block;background:var(--pink)}
+.todo{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;gap:10px}.dot{width:8px;height:8px;border-radius:50%;background:var(--pink);margin-top:5px}.tablewrap{overflow:auto}.table{width:100%;border-collapse:collapse;min-width:1050px}.table th,.table td{padding:11px 13px;border-bottom:1px solid var(--line);text-align:left}.table th{font-size:10px;text-transform:uppercase;color:var(--muted);background:#fafbfc}.name{font-weight:850}.ig{color:var(--pink2);font-weight:700}.empty{text-align:center;padding:30px;color:var(--muted)}
+.filters{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr 1fr;gap:7px;padding:11px 13px;border-bottom:1px solid var(--line)}.field,.search{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px;background:#fff;outline:none}
+.view{display:none}.view.active{display:block}
+.modal{position:fixed;inset:0;background:rgba(15,18,22,.46);display:flex;align-items:center;justify-content:center;padding:18px;z-index:20}.box{width:min(980px,100%);max-height:95vh;overflow:auto;background:#fff;border-radius:17px;padding:20px}.mhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px}.mhead h2{margin:0}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:11px}.group label{display:block;font-size:12px;font-weight:850;margin-bottom:5px}.full{grid-column:1/-1}.group textarea{min-height:88px;resize:vertical}
+.drop{border:2px dashed #d8dce1;border-radius:11px;padding:14px;text-align:center;color:var(--muted);background:#fafbfc}.drop input{display:block;margin:8px auto}.previews{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.preview{position:relative;width:104px}.preview img{width:104px;height:104px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}.preview button{position:absolute;top:4px;right:4px;border:0;border-radius:50%;background:#fff;padding:2px 6px}
+.ai{margin-top:13px;padding:14px;border:1px solid #ead8df;background:#fcf5f7;border-radius:11px}.ai h3{margin:0 0 7px}.ai p{margin:4px 0;line-height:1.45}.direction{margin-top:10px;background:#20242a;color:#fff;border-radius:10px;padding:13px;line-height:1.5}.direction b{color:#ffd3e1}.ai-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}.result{margin-top:10px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;white-space:pre-wrap;line-height:1.5}
+.imgcount{font-size:11px;color:var(--muted);margin-top:4px}.hidden{display:none!important}.toast{position:fixed;right:20px;bottom:20px;background:#20242a;color:#fff;padding:11px 14px;border-radius:9px;z-index:50}
+@media(max-width:1150px){.cards{grid-template-columns:repeat(3,1fr)}.rules{grid-template-columns:1fr}.layout{grid-template-columns:1fr}.filters{grid-template-columns:1fr 1fr}.side{width:195px}.main{margin-left:195px;width:calc(100% - 195px)}}@media(max-width:700px){.side{position:static;width:100%;border:0;border-bottom:1px solid var(--line)}.app{display:block}.main{margin:0;width:100%;padding:14px}.top{flex-direction:column}.cards{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}.full{grid-column:auto}}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="side">
+<div class="brand">TENAS <span>PROSPECÇÃO SAÚDE</span></div>
+<div class="nav"><button class="active" data-view="dash">Dashboard</button><button data-view="leads">Todas as doutoras</button><button data-view="tasks">Follow-ups</button></div>
+</aside>
+<main class="main">
+<div class="top"><div><h1 id="title">Dashboard</h1><p>Mapeie, aborde e encontre compradoras no mercado da saúde.</p></div><div class="actions"><button class="btn" id="export">Exportar CSV</button><label class="btn">Importar CSV<input hidden type="file" id="import" accept=".csv"></label><button class="btn primary" id="new">+ Nova doutora</button></div></div>
 
-  try {
-    const { mode, lead } = req.body || {};
-    if (!lead) return res.status(400).json({ error: "Lead ausente." });
+<section id="dash" class="view active">
+<div class="cards" id="metrics"></div>
+<div class="rules">
+<div class="rule"><h3><span class="badge A">Prospect A</span></h3><p><b>Anuncia + perfil ruim + encaixa no avatar.</b></p><p><b>Aborda imediatamente.</b> Não precisa esperar.</p></div>
+<div class="rule"><h3><span class="badge B">Prospect B</span></h3><p><b>Não anuncia, mas perfil ruim + avatar perfeito.</b></p><p>Segue, observa alguns dias e aborda.</p></div>
+<div class="rule"><h3><span class="badge C">Prospect C</span></h3><p><b>Perfil bom + já tem equipe/agência.</b></p><p>Não perde tempo.</p></div>
+</div>
+<div class="panel" style="margin-bottom:17px"><div class="head"><h2>Regra principal</h2></div><div style="padding:16px"><b>Seu objetivo não é conversar com doutoras. Seu objetivo é encontrar compradoras.</b></div></div>
+<div class="layout"><div class="panel"><div class="head"><h2>Pipeline</h2></div><div class="funnel" id="funnel"></div></div><div class="panel"><div class="head"><h2>Próximos follow-ups</h2><button class="btn" id="allTasks">Ver todos</button></div><div id="next"></div></div></div>
+<div class="panel" style="margin-top:17px"><div class="head"><h2>Prospects A</h2><span class="small">Prioridade máxima</span></div><div class="tablewrap"><table class="table"><thead><tr><th>Doutora</th><th>Área</th><th>Status</th><th>Follow-up</th><th></th></tr></thead><tbody id="priority"></tbody></table></div></div>
+</section>
 
-    const images = [
-      ...(lead.adImages || []).map((x) => ({ label: "ANÚNCIO", data: x })),
-      ...(lead.profileImages || []).map((x) => ({ label: "PERFIL", data: x })),
-      ...(lead.chatImages || []).map((x) => ({ label: "CONVERSA", data: x }))
-    ].slice(0, 8);
+<section id="leads" class="view"><div class="panel"><div class="head"><h2>Todas as doutoras</h2><span class="small" id="count"></span></div><div class="filters"><input class="search" id="q" placeholder="Nome, @, cidade, especialidade..."><select class="field" id="sf"></select><select class="field" id="pf"><option value="">Prioridade</option><option>A</option><option>B</option><option>C</option></select><select class="field" id="af"><option value="">Anúncio</option><option value="sim">Com anúncio</option><option value="nao">Sem anúncio</option></select><select class="field" id="tf"><option value="">Profissão</option><option value="medica">Médica</option><option value="dentista">Dentista</option><option value="enfermeira">Enfermeira</option><option value="outro">Outro</option></select></div><div class="tablewrap"><table class="table"><thead><tr><th>Doutora</th><th>Profissão / especialidade</th><th>Cidade</th><th>Anúncio</th><th>Prioridade</th><th>Status</th><th>Follow-up</th><th></th></tr></thead><tbody id="table"></tbody></table></div></div></section>
+<section id="tasks" class="view"><div class="panel"><div class="head"><h2>Follow-ups</h2><span class="small">A próxima ação nunca pode ficar esquecida.</span></div><div class="tablewrap"><table class="table"><thead><tr><th>Data</th><th>Doutora</th><th>Status</th><th>Última ação</th><th>Próxima ação</th><th></th></tr></thead><tbody id="taskTable"></tbody></table></div></div></section>
+</main></div>
 
-    const context = `
-Você é o "Hormozi Mentor (Não oficial)", um coach de negócios direto, prático e orientado a dados.
-Você NÃO é Alex Hormozi. Não diga que é Alex Hormozi.
-Responda em português.
-IMPORTANTE: sua resposta final deve ser SOMENTE um objeto JSON válido, sem markdown, sem cercas de código e sem texto antes/depois.
+<div class="modal hidden" id="modal"><div class="box">
+<div class="mhead"><h2 id="mtitle">Nova doutora</h2><button class="btn" id="close">Fechar</button></div>
+<form id="form"><input type="hidden" id="id"><div class="grid">
+<div class="group"><label>Nome *</label><input class="field" id="name" required placeholder="Dra. Giovanna Faria"></div>
+<div class="group"><label>@ Instagram</label><input class="field" id="ig" placeholder="@dragiovanna.pedi"></div>
+<div class="group"><label>Profissão</label><select class="field" id="type"><option value="medica">Médica</option><option value="dentista">Dentista</option><option value="enfermeira">Enfermeira</option><option value="outro">Outro</option></select></div>
+<div class="group"><label>Especialidade</label><input class="field" id="niche" placeholder="Pediatria"></div>
+<div class="group"><label>Cidade/UF</label><input class="field" id="city" placeholder="Bauru/SP"></div>
+<div class="group"><label>Contato</label><input class="field" id="contact" placeholder="WhatsApp / e-mail"></div>
+<div class="group"><label>Tem anúncio?</label><select class="field" id="ad"><option value="sim">Sim</option><option value="nao">Não</option></select></div>
+<div class="group"><label>Prioridade</label><select class="field" id="priority"><option value="A">A — anúncio + perfil ruim + avatar</option><option value="B">B — perfil ruim + avatar</option><option value="C">C — perfil bom / equipe</option></select></div>
+<div class="group"><label>Status</label><select class="field" id="status"></select></div>
+<div class="group"><label>Próximo follow-up</label><input class="field" id="follow" type="date"></div>
+<div class="group full"><label>O que chamou atenção?</label><textarea class="field" id="obs" placeholder="Ex.: anúncio de puericultura; perfil visualmente fraco; não parece ter social media; bom fit."></textarea></div>
+<div class="group"><label>Última ação</label><input class="field" id="last" placeholder="DM enviada"></div>
+<div class="group"><label>Próxima ação</label><input class="field" id="nextAction" placeholder="Follow-up em 3 dias"></div>
 
-Contexto:
-- Geovanna é jornalista e social media há quase 10 anos.
-- Empresa: Tenas Digital.
-- Foco: profissionais da saúde.
-- Avatar principal: mulheres da saúde com pelo menos 3 anos de atuação, faturamento acima de R$20 mil e pouco tempo para cuidar do marketing.
-- Objetivo imediato: gerar caixa e encontrar compradoras.
-- Capacidade atual: até 5 clientes.
-- Meta: R$5 mil/mês.
+<div class="group full"><label>Prints do anúncio</label><div class="drop">Selecione os prints<input type="file" id="adImg" accept="image/*" multiple><div class="previews" id="adPreview"></div><div class="imgcount" id="adCount"></div></div></div>
+<div class="group full"><label>Prints do perfil</label><div class="drop">Selecione os prints<input type="file" id="profileImg" accept="image/*" multiple><div class="previews" id="profilePreview"></div><div class="imgcount" id="profileCount"></div></div></div>
+<div class="group full"><label>Prints da conversa</label><div class="drop">Selecione os prints da conversa<input type="file" id="chatImg" accept="image/*" multiple><div class="previews" id="chatPreview"></div><div class="imgcount" id="chatCount"></div></div></div>
+<div class="group full"><label>Mensagem usada / sugerida</label><textarea class="field" id="message" placeholder="Oi, Dra. Giovanna! Sou a Geovanna, jornalista..."></textarea></div>
+<div class="group full"><label>Notas comerciais</label><textarea class="field" id="notes" placeholder="Respostas, objeções, percepção de fit, orçamento, etc."></textarea></div>
+</div>
 
-Regras comerciais:
-A = anuncia + perfil ruim + fit => abordar imediatamente.
-B = não anuncia + perfil ruim + fit => observar alguns dias e abordar.
-C = perfil bom + já tem equipe/agência => não perder tempo.
+<div class="ai"><h3>🧠 Direcionamento do Mentor</h3><p id="aiText">Suba os prints. A IA lê o perfil e o anúncio e preenche os dados automaticamente. Depois confira e salve.</p><div class="direction" id="direction">Próxima ação: <b>classificar o prospect e avançar uma etapa.</b></div><div class="ai-actions"><button type="button" class="btn dark" id="analyze">Ler prints com IA</button><button type="button" class="btn" id="coach">Alex, me ajuda com uma mensagem</button></div><div class="result hidden" id="aiResult"></div></div>
 
-Nunca invente dados. Se algo não estiver visível, deixe vazio ou "não identificado".
-`;
+<div class="actions" style="justify-content:flex-end;margin-top:13px"><button type="button" class="btn" id="del">Excluir</button><button type="button" class="btn" id="cancel">Cancelar</button><button class="btn primary">Salvar doutora</button></div>
+</form></div></div>
+<div id="toast" class="hidden"></div>
 
-    const leadText = `
-DADOS ATUAIS DA FICHA:
-Nome: ${lead.name || ""}
-Instagram: ${lead.ig || ""}
-Profissão: ${lead.type || ""}
-Especialidade: ${lead.niche || ""}
-Cidade: ${lead.city || ""}
-Contato: ${lead.contact || ""}
-Anúncio: ${lead.ad || ""}
-Prioridade: ${lead.priority || ""}
-Status: ${lead.status || ""}
-Observação: ${lead.obs || ""}
-Próxima ação: ${lead.nextAction || ""}
-Mensagem: ${lead.message || ""}
-Notas: ${lead.notes || ""}
-`;
-
-    const task = mode === "coach"
-      ? `
-ETAPA 2 — MENSAGEM.
-A doutora já foi salva. Analise os dados salvos, os prints e, se houver, a conversa.
-Escreva UMA mensagem comercial curta, humana e direta.
-Se não existe conversa, faça uma primeira abordagem.
-Se já existe conversa, escreva a próxima resposta.
-Não ofereça auditoria, diagnóstico grátis, material grátis ou elogios vazios.
-Use a experiência da Geovanna (jornalista, quase 10 anos com comunicação, foco em saúde) como contexto.
-Não invente informações.
-
-Retorne exatamente:
-{"fields":{"message":"..."},"text":"..."}
-`
-      : `
-ETAPA 1 — LEITURA DOS PRINTS.
-Analise principalmente PERFIL e ANÚNCIO e preencha a ficha automaticamente.
-
-Identifique somente com evidência visível:
-- nome
-- Instagram/@
-- profissão
-- especialidade
-- cidade/UF
-- contato
-- se há anúncio
-- sinais de social media/agência
-- qualidade/clareza do posicionamento
-- fit com o avatar
-- prioridade A/B/C
-- próxima ação comercial
-
-Leia BIO, nome, texto do anúncio, legenda, botões, endereço, telefone e textos visíveis.
-Cidade só pode ser preenchida se estiver explícita ou puder ser lida com segurança.
-Não adivinhe.
-
-Retorne exatamente neste formato:
-{"fields":{"name":"","ig":"","type":"","niche":"","city":"","contact":"","ad":"","priority":"","obs":"","nextAction":""},"text":"resumo curto"}
-
-Não inclua mensagem de prospecção nesta etapa.
-`;
-
-    // Monta as partes no formato do Gemini: texto e imagens inline (base64).
-    const parts = [{ text: context + "\n" + leadText + "\n" + task }];
-
-    for (const im of images) {
-      if (!im.data) continue;
-      const match = /^data:(.+?);base64,(.+)$/.exec(im.data);
-      if (!match) continue;
-      const [, mimeType, base64Data] = match;
-      parts.push({ text: `A próxima imagem é da categoria ${im.label}. Leia somente informações realmente visíveis.` });
-      parts.push({ inlineData: { mimeType, data: base64Data } });
-    }
-
-    const model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
-
-    const body = {
-      contents: [{ role: "user", parts }],
-      generationConfig: {
-        responseMimeType: "application/json"
-      }
-    };
-
-    const r = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
-
-    const raw = await r.text();
-    let data = {};
-    try { data = JSON.parse(raw); } catch (_) {}
-
-    if (!r.ok) {
-      const msg = data?.error?.message || raw || `Gemini retornou HTTP ${r.status}.`;
-      return res.status(502).json({ error: msg });
-    }
-
-    const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
-    if (!text) {
-      return res.status(502).json({ error: "A IA não retornou texto. Tente novamente." });
-    }
-
-    // Aceita JSON puro ou JSON dentro de markdown, sem quebrar a interface.
-    let parsed = null;
-    try {
-      parsed = JSON.parse(text.trim());
-    } catch (_) {
-      const match = text.match(/\{[\s\S]*\}/);
-      if (match) {
-        try { parsed = JSON.parse(match[0]); } catch (_) {}
-      }
-    }
-
-    if (!parsed) {
-      return res.status(502).json({
-        error: "A IA respondeu em um formato inesperado.",
-        raw: text.slice(0, 1200)
-      });
-    }
-
-    return res.status(200).json({
-      fields: parsed.fields || {},
-      text: parsed.text || ""
-    });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: e?.message || "Erro inesperado no servidor." });
-  }
+<script>
+const STATUS=["Mapeada","Mensagem enviada","Aguardando resposta","Respondeu","Reunião marcada","Proposta enviada","Fechou","Não interessada"];
+const KEY="tenas_v3";let leads=JSON.parse(localStorage.getItem(KEY)||"null")||[];let imgs={ad:[],profile:[],chat:[]};
+const $=s=>document.querySelector(s),$$=s=>document.querySelectorAll(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
+function save(){localStorage.setItem(KEY,JSON.stringify(leads));render()}
+function cls(s){return {"Respondeu":"reply","Reunião marcada":"meeting","Proposta enviada":"proposal","Fechou":"won","Não interessada":"lost"}[s]||"st"}
+function date(d){if(!d)return"—";let [y,m,x]=d.split("-");return`${x}/${m}/${y}`}
+function render(){
+ let total=leads.length,ads=leads.filter(x=>x.ad==="sim").length,open=leads.filter(x=>!["Fechou","Não interessada"].includes(x.status)).length,rep=leads.filter(x=>["Respondeu","Reunião marcada","Proposta enviada","Fechou"].includes(x.status)).length,won=leads.filter(x=>x.status==="Fechou").length;
+ $("#metrics").innerHTML=[["Doutoras mapeadas",total,"Base total"],["Com anúncio",ads,`${total?Math.round(ads/total*100):0}% da base`],["Em aberto",open,"Ainda podem avançar"],["Responderam",rep,`${total?Math.round(rep/total*100):0}% da base`],["Fechamentos",won,"Clientes ganhos"],["Taxa de fechamento",`${total?Math.round(won/total*100):0}%`,"sobre leads"]].map(a=>`<div class="card"><div class="label">${a[0]}</div><div class="metric">${a[1]}</div><div class="sub">${a[2]}</div></div>`).join("");
+ let max=Math.max(...STATUS.map(s=>leads.filter(x=>x.status===s).length),1);$("#funnel").innerHTML=STATUS.map(s=>{let n=leads.filter(x=>x.status===s).length;return`<div class="frow"><span>${s}</span><div class="bar"><i style="width:${n/max*100}%"></i></div><b>${n}</b></div>`}).join("");
+ let next=[...leads].filter(x=>x.follow&&!["Fechou","Não interessada"].includes(x.status)).sort((a,b)=>a.follow.localeCompare(b.follow)).slice(0,7);$("#next").innerHTML=next.length?next.map(x=>`<div class="todo"><i class="dot"></i><div><b>${esc(x.name)}</b><div class="small">${date(x.follow)} · ${esc(x.nextAction||"Follow-up")}</div></div></div>`).join(""):`<div class="empty">Nenhum follow-up cadastrado.</div>`;
+ let a=leads.filter(x=>x.priority==="A").slice(0,12);$("#priority").innerHTML=a.length?a.map(x=>`<tr><td><div class="name">${esc(x.name)}</div><div class="small">${esc(x.ig||"")}</div></td><td>${esc(x.niche||"—")}</td><td><span class="badge ${cls(x.status)}">${esc(x.status)}</span></td><td>${date(x.follow)}</td><td><button class="btn" onclick="edit('${x.id}')">Abrir</button></td></tr>`).join(""):`<tr><td colspan="5" class="empty">Nenhuma Prospect A cadastrada.</td></tr>`;
+ renderTable();renderTasks();
 }
+function renderTable(){
+ let q=$("#q").value.toLowerCase(),sf=$("#sf").value,pf=$("#pf").value,af=$("#af").value,tf=$("#tf").value;
+ let a=leads.filter(x=>(!q||[x.name,x.ig,x.niche,x.city,x.contact,x.obs].join(" ").toLowerCase().includes(q))&&(!sf||x.status===sf)&&(!pf||x.priority===pf)&&(!af||x.ad===af)&&(!tf||x.type===tf));$("#count").textContent=`${a.length} de ${leads.length}`;
+ $("#table").innerHTML=a.length?a.map(x=>`<tr><td><div class="name">${esc(x.name)}</div><div class="ig">${esc(x.ig||"")}</div></td><td>${esc(x.type||"")}${x.niche?" · "+esc(x.niche):""}</td><td>${esc(x.city||"—")}</td><td>${x.ad==="sim"?"Sim":"Não"}</td><td><span class="badge ${x.priority}">${x.priority}</span></td><td><span class="badge ${cls(x.status)}">${esc(x.status)}</span></td><td>${date(x.follow)}</td><td><button class="btn" onclick="edit('${x.id}')">Editar</button></td></tr>`).join(""):`<tr><td colspan="8" class="empty">Nenhuma doutora encontrada.</td></tr>`;
+}
+function renderTasks(){let a=[...leads].filter(x=>x.follow).sort((a,b)=>a.follow.localeCompare(b.follow));$("#taskTable").innerHTML=a.length?a.map(x=>`<tr><td>${date(x.follow)}</td><td><b>${esc(x.name)}</b><div class="small">${esc(x.ig||"")}</div></td><td><span class="badge ${cls(x.status)}">${esc(x.status)}</span></td><td>${esc(x.last||"—")}</td><td>${esc(x.nextAction||"—")}</td><td><button class="btn" onclick="edit('${x.id}')">Abrir</button></td></tr>`).join(""):`<tr><td colspan="6" class="empty">Nenhum follow-up.</td></tr>`}
+function nav(v){$$(".view").forEach(x=>x.classList.remove("active"));$("#"+v).classList.add("active");$$(".nav button").forEach(x=>x.classList.toggle("active",x.dataset.view===v));$("#title").textContent=v==="dash"?"Dashboard":v==="leads"?"Todas as doutoras":"Follow-ups"}
+$$(".nav button").forEach(b=>b.onclick=()=>nav(b.dataset.view));$("#allTasks").onclick=()=>nav("tasks");
+$("#sf").innerHTML='<option value="">Todos os status</option>'+STATUS.map(s=>`<option>${s}</option>`).join("");["q","sf","pf","af","tf"].forEach(id=>$("#"+id).addEventListener("input",renderTable));
+
+function dataURL(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>{
+      const src=reader.result;
+      const img=new Image();
+      img.onload=()=>{
+        const MAX=1600;
+        let w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+        if(w>MAX||h>MAX){
+          const scale=Math.min(MAX/w,MAX/h); w=Math.round(w*scale); h=Math.round(h*scale);
+        }
+        const c=document.createElement("canvas");
+        c.width=w; c.height=h;
+        const ctx=c.getContext("2d");
+        ctx.drawImage(img,0,0,w,h);
+        resolve(c.toDataURL("image/jpeg",0.78));
+      };
+      img.onerror=()=>resolve(src);
+      img.src=src;
+    };
+    reader.onerror=reject;
+    reader.readAsDataURL(file);
+  });
+}
+async function addImgs(type,files){for(let f of files){if(imgs[type].length>=8)break;imgs[type].push(await dataURL(f))}preview(type)}
+function preview(type){let el=$("#"+type+"Preview"),count=$("#"+type+"Count");el.innerHTML=imgs[type].map((src,i)=>`<div class="preview"><img src="${src}"><button type="button" onclick="imgs['${type}'].splice(${i},1);preview('${type}')">×</button></div>`).join("");count.textContent=imgs[type].length?`${imgs[type].length} imagem(ns) carregada(s) — usada(s) também na análise por IA.`:"Nenhuma imagem."}
+$("#adImg").onchange=e=>addImgs("ad",[...e.target.files]);$("#profileImg").onchange=e=>addImgs("profile",[...e.target.files]);$("#chatImg").onchange=e=>addImgs("chat",[...e.target.files]);
+
+function guidance(){let p=$("#priority").value,s=$("#status").value,n=$("#name").value||"esta doutora",niche=$("#niche").value||"sua área";let t=p==="A"?"Alta prioridade: anúncio ativo + perfil ruim + fit. Aborde imediatamente.":p==="B"?"Boa oportunidade: perfil ruim + fit, mas sem sinal de anúncio. Observe e aborde.":"Baixa prioridade: se já parece bem atendida, não gaste energia.";$("#aiText").textContent=t;let a=s==="Mapeada"?"enviar a abordagem curta":s==="Mensagem enviada"||s==="Aguardando resposta"?"aguardar até a data de follow-up e então insistir":s==="Respondeu"?"qualificar e conduzir para uma conversa":s==="Reunião marcada"?"preparar a reunião e vender a transformação":"avançar uma etapa do pipeline";$("#direction").innerHTML=`Próxima ação para <b>${esc(n)}</b>: ${a}. Área: <b>${esc(niche)}</b>.`}
+["name","priority","status","niche"].forEach(id=>$("#"+id).addEventListener("input",guidance));
+
+function open(lead=null){$("#modal").classList.remove("hidden");$("#mtitle").textContent=lead?"Editar doutora":"Nova doutora";$("#del").classList.toggle("hidden",!lead);$("#id").value=lead?.id||"";["name","ig","type","niche","city","contact","ad","priority","status","follow","obs","last","nextAction","message","notes"].forEach(k=>{if($("#"+k))$("#"+k).value=lead?.[k]||""});imgs={ad:lead?.adImages||[],profile:lead?.profileImages||[],chat:lead?.chatImages||[]};preview("ad");preview("profile");preview("chat");$("#aiResult").classList.add("hidden");$("#aiResult").textContent="";guidance()}
+function close(){ $("#modal").classList.add("hidden") }function edit(id){open(leads.find(x=>x.id===id))}
+$("#new").onclick=()=>open();$("#close").onclick=close;$("#cancel").onclick=close;
+$("#form").onsubmit=e=>{e.preventDefault();let id=$("#id").value,obj={id:id||crypto.randomUUID(),name:$("#name").value.trim(),ig:$("#ig").value.trim(),type:$("#type").value,niche:$("#niche").value.trim(),city:$("#city").value.trim(),contact:$("#contact").value.trim(),ad:$("#ad").value,priority:$("#priority").value,status:$("#status").value,follow:$("#follow").value,obs:$("#obs").value.trim(),last:$("#last").value.trim(),nextAction:$("#nextAction").value.trim(),message:$("#message").value.trim(),notes:$("#notes").value.trim(),adImages:imgs.ad,profileImages:imgs.profile,chatImages:imgs.chat};if(id)leads=leads.map(x=>x.id===id?obj:x);else leads.unshift(obj);save();close();toast("Doutora salva.");};
+$("#del").onclick=()=>{let id=$("#id").value;if(id&&confirm("Excluir esta doutora?")){leads=leads.filter(x=>x.id!==id);save();close();toast("Excluída.")}};
+
+function currentFormLead(){
+ return {
+  id:$("#id").value || null,
+  name:$("#name").value.trim(),ig:$("#ig").value.trim(),type:$("#type").value,
+  niche:$("#niche").value.trim(),city:$("#city").value.trim(),contact:$("#contact").value.trim(),
+  ad:$("#ad").value,priority:$("#priority").value,status:$("#status").value,
+  follow:$("#follow").value,obs:$("#obs").value.trim(),last:$("#last").value.trim(),
+  nextAction:$("#nextAction").value.trim(),message:$("#message").value.trim(),notes:$("#notes").value.trim(),
+  adImages:imgs.ad,profileImages:imgs.profile,chatImages:imgs.chat
+ };
+}
+
+async function aiCall(mode){
+ if(mode==="analyze" && !imgs.ad.length && !imgs.profile.length && !imgs.chat.length){
+   toast("Suba pelo menos um print antes de ler com IA.");
+   return;
+ }
+ if(mode==="coach" && !$("#id").value){
+   toast("Salve a doutora primeiro. A mensagem é uma etapa separada.");
+   return;
+ }
+ let lead=currentFormLead();
+ if(mode==="coach"){
+   const saved=leads.find(x=>x.id===lead.id);
+   if(saved) lead={...saved, ...lead};
+ }
+ $("#aiResult").classList.remove("hidden");
+ $("#aiResult").textContent=mode==="analyze"?"Lendo prints e preenchendo os dados…":"Pensando na mensagem…";
+ try{
+   let r=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode,lead})});
+   const raw=await r.text();
+   let j;
+   try{ j=JSON.parse(raw); }
+   catch(_){ throw new Error(raw || `Erro HTTP ${r.status}`); }
+   if(!r.ok) throw new Error(j.error||"Erro na IA");
+
+   if(mode==="analyze" && j.fields){
+     const allowed=["name","ig","type","niche","city","contact","ad","priority","obs","nextAction"];
+     for(const k of allowed){
+       const v=j.fields[k];
+       if($("#"+k) && v !== null && v !== undefined && String(v).trim() !== ""){
+         $("#"+k).value=v;
+       }
+     }
+     guidance();
+     $("#aiText").textContent="Dados preenchidos pela IA. Confira rapidamente e clique em “Salvar doutora”.";
+     $("#aiResult").textContent=j.text||"Dados preenchidos. Confira e salve.";
+     toast("Dados preenchidos. Confira e salve a doutora.");
+   } else if(mode==="coach"){
+     if(j.fields?.message && $("#message")) $("#message").value=j.fields.message;
+     $("#aiResult").textContent=j.text||j.fields?.message||"Sem sugestão.";
+     if(j.fields?.message) toast("Mensagem sugerida. Confira e adapte se quiser.");
+   } else {
+     $("#aiResult").textContent=j.text||"Sem resposta.";
+   }
+ }catch(e){
+   $("#aiResult").textContent="Não foi possível usar a IA agora.\n\n"+e.message+"\n\nConfira se OPENAI_API_KEY está configurada no Vercel e se o deployment mais recente está ativo.";
+ }
+}
+$("#analyze").onclick=()=>aiCall("analyze");
+$("#coach").onclick=()=>aiCall("coach");
+
+function toast(s){let t=$("#toast");t.textContent=s;t.className="toast";setTimeout(()=>t.className="hidden",2200)}
+function csvEsc(v){return`"${String(v??"").replace(/"/g,'""')}"`}
+$("#export").onclick=()=>{let h=["id","name","ig","type","niche","city","contact","ad","priority","status","follow","obs","last","nextAction","message","notes"];let csv=[h.join(","),...leads.map(x=>h.map(k=>csvEsc(x[k])).join(","))].join("\n"),b=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}),a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="tenas-prospeccao-saude-v3.csv";a.click()};
+$("#import").onchange=async e=>{let f=e.target.files[0];if(!f)return;let t=await f.text(),ls=t.split(/\r?\n/).filter(Boolean);if(ls.length>1){let parse=s=>{let a=[],c="",q=false;for(let i=0;i<s.length;i++){let x=s[i],n=s[i+1];if(x=='"'&&q&&n=='"'){c+='"';i++}else if(x=='"')q=!q;else if(x==","&&!q){a.push(c);c=""}else c+=x}a.push(c);return a};let h=parse(ls[0]);leads=ls.slice(1).map(l=>{let v=parse(l),o={};h.forEach((k,i)=>o[k]=v[i]||"");o.id=o.id||crypto.randomUUID();return o});save();toast("Importação concluída.")}e.target.value=""};
+$("#status").innerHTML=STATUS.map(s=>`<option>${s}</option>`).join("");render();
+</script>
+</body>
+</html>
