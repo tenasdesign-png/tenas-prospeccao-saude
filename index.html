@@ -196,7 +196,7 @@ async function aiCall(mode){
      $("#aiResult").textContent=j.text||"Sem resposta.";
    }
  }catch(e){
-   $("#aiResult").textContent="Não foi possível usar a IA agora.\n\n"+e.message+"\n\nConfira se OPENAI_API_KEY está configurada no Vercel e se o deployment mais recente está ativo.";
+   $("#aiResult").textContent="Não foi possível usar a IA agora.\n\n"+e.message+"\n\nSe o erro persistir, tente novamente em alguns segundos.";
  }
 }
 $("#analyze").onclick=()=>aiCall("analyze");
