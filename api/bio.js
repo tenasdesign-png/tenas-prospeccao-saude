@@ -279,19 +279,53 @@ const REQUEST_BUDGET_MS = 50000;
 // Modelos que recusarem a opção são lembrados e chamados sem ela.
 const noThinking = new Set();
 
-function modelChain() {
-  const list = [
-    process.env.GEMINI_MODEL, "gemini-flash-latest", "gemini-2.5-flash",
-    process.env.GEMINI_FALLBACK_MODEL, "gemini-flash-lite-latest", "gemini-2.5-flash-lite"
-  ];
-  return [...new Set(list.filter(Boolean))];
+const STATIC_MODELS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-2.5-flash-lite"];
+let modelCache = { list: null, at: 0 };
+
+// Pergunta ao Google quais modelos esta chave pode usar (nomes mudam e modelos antigos são
+// desativados) e monta a ordem de preferência: Flash mais novo e estável primeiro, Lite por último.
+async function discoverModels() {
+  if (modelCache.list && Date.now() - modelCache.at < 60 * 60 * 1000) return modelCache.list;
+  try {
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000", {
+      headers: { "x-goog-api-key": process.env.GEMINI_API_KEY },
+      signal: AbortSignal.timeout(5000)
+    });
+    if (!r.ok) return null;
+    const data = await r.json();
+    const version = (n) => Number((/gemini-(\d+(?:\.\d+)?)/.exec(n) || [])[1] || 0);
+    const list = (data.models || [])
+      .filter((m) => (m.supportedGenerationMethods || []).includes("generateContent"))
+      .map((m) => String(m.name || "").replace(/^models\//, ""))
+      .filter((n) => /^gemini-.*flash/.test(n) && !/image|tts|audio|live|embed|thinking|exp/.test(n))
+      .sort((x, y) => {
+        const score = (n) => (/lite/.test(n) ? 2 : 0) + (/preview/.test(n) ? 1 : 0);
+        return score(x) - score(y) || version(y) - version(x) || (/latest/.test(y) ? 1 : 0) - (/latest/.test(x) ? 1 : 0);
+      });
+    if (list.length) modelCache = { list, at: Date.now() };
+    return list.length ? list : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function modelChain() {
+  const found = await discoverModels();
+  const list = [process.env.GEMINI_MODEL, ...(found || STATIC_MODELS), process.env.GEMINI_FALLBACK_MODEL];
+  const unique = [...new Set(list.filter(Boolean))];
+  // No máximo 4 tentativas: 3 modelos "normais" + o melhor Lite, para caber no prazo.
+  const lite = unique.filter((n) => /lite/.test(n));
+  const main = unique.filter((n) => !/lite/.test(n)).slice(0, 3);
+  return [...main, ...lite.slice(0, 1)].slice(0, 4);
 }
 
 // Códigos curtos exibidos na tela para diagnóstico (sem nenhum dado sensível).
-function geminiError(code) {
+function geminiError(code, attempts = []) {
   const err = new Error(`IA indisponível (${code}).`);
   err.status = 502;
-  err.code = code;
+  // Ex.: "LIMITE · flash-latest=LIMITE 2.5-flash=MODELO" — mostra o que aconteceu em cada modelo.
+  const detail = attempts.map((t) => `${t.model.replace(/^gemini-/, "")}=${t.code}`).join(" ");
+  err.code = detail ? `${code} · ${detail}` : code;
   return err;
 }
 
@@ -302,7 +336,8 @@ async function callGemini(prompt, image, temperature, deadline) {
     parts.push({ inlineData: image });
   }
 
-  const models = modelChain();
+  const models = await modelChain();
+  const attempts = [];
   let lastCode = "SEM-RESPOSTA";
   for (let i = 0; i < models.length; i++) {
     const model = models[i];
@@ -324,6 +359,7 @@ async function callGemini(prompt, image, temperature, deadline) {
       raw = await r.text();
     } catch (e) {
       lastCode = e?.name === "TimeoutError" ? "TEMPO" : "CONEXAO";
+      attempts.push({ model, code: lastCode });
       console.error(`bio: ${model} -> ${lastCode}`);
       continue;
     }
@@ -336,6 +372,7 @@ async function callGemini(prompt, image, temperature, deadline) {
       const parsed = parseJson(text);
       if (parsed) return parsed;
       lastCode = data?.promptFeedback?.blockReason || cand?.finishReason === "SAFETY" ? "BLOQUEIO" : "FORMATO";
+      attempts.push({ model, code: lastCode });
       console.error(`bio: ${model} -> ${lastCode} (${cand?.finishReason || "-"})`);
       continue;
     }
@@ -348,11 +385,15 @@ async function callGemini(prompt, image, temperature, deadline) {
       continue;
     }
     if (/api key/i.test(msg) || r.status === 401 || (r.status === 403 && /key|permission/i.test(msg))) {
-      throw geminiError("CHAVE"); // chave inválida/bloqueada: trocar de modelo não resolve
+      throw geminiError("CHAVE", attempts); // chave inválida/bloqueada: trocar de modelo não resolve
     }
     lastCode = r.status === 429 ? "LIMITE" : r.status === 404 ? "MODELO" : `G${r.status}`;
+    attempts.push({ model, code: lastCode });
   }
-  throw geminiError(lastCode);
+  // O código principal é o problema mais relevante, não só o último.
+  const order = ["LIMITE", "TEMPO", "BLOQUEIO", "FORMATO", "CONEXAO"];
+  const main = order.find((c) => attempts.some((t) => t.code === c)) || lastCode;
+  throw geminiError(main, attempts);
 }
 
 function parseJson(text) {
@@ -491,7 +532,7 @@ export default async function handler(req, res) {
     if (status !== 400) console.error("bio:", e.code || e.message);
     return res.status(status).json({
       error: status === 400 ? e.message
-        : e.code === "CHAVE" ? "O serviço de IA está com a chave de acesso inválida. Avise a Tenas Digital."
+        : String(e.code || "").startsWith("CHAVE") ? "O serviço de IA está com a chave de acesso inválida. Avise a Tenas Digital."
         : "Não foi possível concluir a geração agora. Suas respostas foram mantidas — tente novamente em alguns segundos.",
       code: status === 400 ? undefined : (e.code || "SERVIDOR")
     });
