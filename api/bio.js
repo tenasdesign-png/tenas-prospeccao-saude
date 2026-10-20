@@ -1,13 +1,12 @@
 // Gerador Inteligente de Bios — Tenas Digital
 // Endpoint público: POST /api/bio
 //
-// Privacidade: o print é recebido em memória, enviado à API do Gemini apenas para
-// leitura/análise e descartado ao fim da requisição. Nada é gravado em disco,
-// banco de dados ou log (não registramos respostas, textos ou imagens).
+// Privacidade: as respostas ficam em memória só durante a requisição e são enviadas à IA
+// (Vercel AI Gateway) apenas para gerar o resultado. Nada é gravado em disco, banco de
+// dados ou log (não registramos respostas nem textos).
 
 const BIO_LIMIT = Number(process.env.BIO_CHAR_LIMIT) || 150;
 const NAME_LIMIT = 64;
-const MAX_IMAGE_BYTES = (Number(process.env.MAX_UPLOAD_MB) || 10) * 1024 * 1024;
 
 const PROFESSIONS = [
   "Psicologia", "Medicina", "Nutrição", "Odontologia", "Fisioterapia", "Fonoaudiologia",
@@ -104,22 +103,13 @@ function validateAnswers(a) {
   if (!out.modalities.includes("Presencial.")) out.city = "";
   if (!STYLES.includes(out.style)) errors.push("Selecione um estilo.");
   out.noBio = !!a.noBio || out.difficulties.includes(NO_BIO);
-  if (!out.difficulties.length && !out.difficultyText && !out.bioText && !out.noBio && !a.hasImage) {
+  if (!out.difficulties.length && !out.difficultyText && !out.bioText && !out.noBio) {
     errors.push("Conte qual é a sua dificuldade com a bio.");
   }
   return { answers: out, errors };
 }
 
-function parseImage(dataUrl) {
-  if (!dataUrl) return null;
-  const m = /^data:(image\/(?:png|jpe?g));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
-  if (!m) throw new Error("Formato de imagem inválido. Envie PNG, JPG ou JPEG.");
-  const bytes = Math.floor((m[2].length * 3) / 4);
-  if (bytes > MAX_IMAGE_BYTES) throw new Error("A imagem é grande demais. Envie um arquivo menor.");
-  return { mimeType: m[1] === "image/jpg" ? "image/jpeg" : m[1], data: m[2] };
-}
-
-function profileText(a, extracted) {
+function profileText(a) {
   const profession = a.profession === "Outra profissão da área da saúde" ? a.professionOther : a.profession;
   const audience = a.audience === "Outro público." ? a.audienceOther : a.audience.replace(/\.$/, "");
   const lines = [
@@ -137,9 +127,6 @@ function profileText(a, extracted) {
   if (diffs.length) lines.push(`Dificuldades que a pessoa sente com a bio atual: ${diffs.map((d) => d.replace(/\.$/, "")).join("; ")}`);
   if (a.difficultyText) lines.push(`Nas palavras da pessoa: """${a.difficultyText}"""`);
   if (a.bioText) lines.push(`Texto da bio atual colado pela pessoa:\n"""${a.bioText}"""`);
-  if (extracted && (extracted.bio || extracted.name)) {
-    lines.push(`Leitura anterior do perfil (já confirmada): nome="${str(extracted.name, 100)}", bio="""${str(extracted.bio, 400)}""", destaques=${JSON.stringify((extracted.highlights || []).slice(0, 12).map((h) => str(h, 40)))}`);
-  }
   return lines.join("\n");
 }
 
@@ -148,12 +135,12 @@ Você é estrategista sênior de comunicação digital da Tenas Digital, agênci
 Escreve em português do Brasil, com linguagem acessível, profissional e acolhedora.
 
 REGRAS INEGOCIÁVEIS
-1. Use somente informações confirmadas pela pessoa no formulário ou lidas com segurança no print. Na dúvida, não use.
+1. Use somente informações confirmadas pela pessoa no formulário ou presentes na bio que ela colou. Na dúvida, não use.
 2. Não invente títulos, credenciais, especializações, número de pacientes, anos de experiência, certificações, depoimentos, resultados, cidades, regiões de cobertura ou modalidades.
 3. Uma área de interesse ou atuação NÃO equivale a título de especialista. Só use "especialista" se a pessoa escreveu explicitamente que é especialista/possui título. Prefira "atuação em", "atendimento a", "foco em".
 4. Respeite a ética publicitária dos conselhos (CFM, CFP, CFN, CFO, COFFITO, CFFa, COFEN, CFF, CFBM, CONFEF, CFMV etc.): nada de promessa ou garantia de resultado, "antes e depois", sensacionalismo, superlativos ("o melhor", "referência número 1"), preços, promoções ou autopromoção enganosa.
 5. Evite clichês genéricos, como: "transformando vidas", "cuidando de você com amor", "sua saúde em primeiro lugar", "apaixonada pelo que faço", "realizando sonhos", "seu sorriso é minha missão", "especialista em você", "cuidar é minha missão", "gratidão".
-6. Gênero: só flexione a profissão (ex.: Psicóloga/Psicólogo) se o gênero estiver claro pelo nome informado (ou pelo nome no print, se houver). Caso contrário, use substantivos comuns de dois gêneros (Nutricionista, Dentista, Fisioterapeuta) ou o nome da área ("Psicologia para...", "Nutrição para...").
+6. Gênero: só flexione a profissão (ex.: Psicóloga/Psicólogo) se o gênero estiver claro pelo nome informado. Caso contrário, use substantivos comuns de dois gêneros (Nutricionista, Dentista, Fisioterapeuta) ou o nome da área ("Psicologia para...", "Nutrição para...").
 7. Cidade: use exatamente a cidade informada para atendimento presencial, sempre no formato "Cidade - UF" (ex.: "São Paulo - SP"); nunca acrescente outras. Se o atendimento for somente on-line, não cite cidade.
 8. Emojis: no máximo 2 por bio, apenas se combinarem com o estilo. Estilos "Elegante e sofisticado" e "Especialista e objetivo" pedem pouco ou nenhum emoji.
 9. Limite do Instagram: cada bio completa deve ter no máximo ${BIO_LIMIT} caracteres contando espaços, quebras de linha e emojis (emoji conta como 2). Mire entre 90 e ${BIO_LIMIT - 10}.
@@ -168,22 +155,16 @@ ESTRUTURA FLEXÍVEL SUGERIDA (não obrigatória): 1ª linha = frase marcante ou 
 Exemplo ilustrativo (não copie): "Um espaço de cuidado para você se escutar. 🌿\nPsicóloga para mulheres cansadas de dar conta de tudo\nSão Paulo - SP e on-line\n↓ Agende sua conversa"
 `;
 
-function readPrintStep(hasImage) {
-  return hasImage
-    ? `Leia o print do perfil do Instagram. Use somente o que estiver legível: campo Nome (texto em negrito acima da bio), @ (se visível), texto da bio, nomes dos destaques e texto do link.`
-    : "Não há print. Use o texto colado (se houver) como bio atual.";
-}
-
-// Chamada 1: leitura do print + diagnóstico + campo Nome + próximos passos.
-function analysisPrompt(a, hasImage) {
+// Chamada 1: diagnóstico + bônus de nome do perfil + próximos passos.
+function analysisPrompt(a) {
   const scratch = a.noBio && !a.bioText;
-  const fromDifficulties = !scratch && !a.bioText && !hasImage;
+  const fromDifficulties = !scratch && !a.bioText;
   return `${RULES}
 DADOS CONFIRMADOS PELA PESSOA
 ${profileText(a)}
 
 TAREFA
-1. ${fromDifficulties ? "A pessoa não enviou a bio atual: ela contou as dificuldades que sente. Não afirme nada sobre o texto da bio dela, porque você não o viu." : readPrintStep(hasImage)}${hasImage ? ` Se a bio não estiver legível com segurança E não houver texto colado, responda com "status":"unreadable" e explique brevemente em "unreadableReason" (ex.: "a imagem está desfocada", "a bio está cortada").` : ""}
+1. ${fromDifficulties ? "A pessoa não enviou a bio atual: ela contou as dificuldades que sente. Não afirme nada sobre o texto da bio dela, porque você não o viu." : scratch ? "A pessoa ainda não tem bio." : "Use o texto colado como bio atual."}
 2. ${scratch
     ? `A pessoa não tem bio. Em "improvements", traga de 2 a 4 FUNDAMENTOS que a bio dela precisa comunicar, considerando profissão, público, objetivo e modalidade (use "type":"fundamento").`
     : fromDifficulties
@@ -191,7 +172,7 @@ TAREFA
     : `Analise a bio atual considerando: clareza da profissão e área; qualidade da primeira linha; facilidade para entender quem é atendido; proposta de valor; uso do campo Nome; informações relevantes de atendimento; cidade quando presencial e pertinente; chamada para ação; frases genéricas ou irrelevantes; coerência com público e objetivo; organização e legibilidade; oportunidades de diferenciação.
    Traga de 2 a 4 pontos prioritários, apenas os que você realmente observa. Não invente problemas para preencher a lista.
    Classifique cada um como "erro" (problema real) ou "oportunidade" (melhoria opcional). Uma frase autoral não é erro só por não citar a profissão.
-   Não aponte como ausente algo que não aparece no print mas foi confirmado no formulário — nesse caso, oriente a incluir na bio de forma objetiva, sem tratar como falha da pessoa.
+   Não aponte como ausente algo que não aparece na bio colada mas foi confirmado no formulário — nesse caso, oriente a incluir na bio de forma objetiva, sem tratar como falha da pessoa.
    Se a bio já for boa em algum aspecto, você pode reconhecer isso brevemente no texto de outro ponto, sem elogios vazios.`}
    Cada ponto: "title" (frase curta e específica, ex.: "Sua bio não deixa claro quem você atende."), "why" (por que isso importa, 1–2 frases), "how" (como corrigir, prático e adaptado ao perfil).
 3. BÔNUS — nome do perfil para facilitar a busca ("nameFields"): o campo Nome do Instagram entra na busca, então deve conter as palavras que um paciente digitaria. Crie 3 opções, cada uma com no máximo ${NAME_LIMIT} caracteres, no formato "Nome | Profissão + área/público" e, se houver atendimento presencial, "em Cidade" (só o nome da cidade, sem UF). Exemplo do formato (outra profissão): "Geovanna | Social Media da Saúde em São Paulo". Use o nome informado; se não houver, use "[Seu nome]". Varie as palavras-chave entre as opções (profissão, área de atuação, público). Em "nameWhy", explique em 1 frase por que isso ajuda a ser encontrado(a).
@@ -199,9 +180,6 @@ TAREFA
 
 FORMATO: responda SOMENTE com JSON válido, sem markdown:
 {
- "status": "ok" | "unreadable",
- "unreadableReason": "",
- "extracted": { "name": "", "username": "", "bio": "", "highlights": [], "link": "" },
  "improvements": [ { "type": "erro" | "oportunidade" | "fundamento", "title": "", "why": "", "how": "" } ],
  "nameFields": ["", "", ""],
  "nameWhy": "",
@@ -210,13 +188,12 @@ FORMATO: responda SOMENTE com JSON válido, sem markdown:
 }
 
 // Chamada 2: primeiras linhas + 3 versões da bio.
-function createPrompt(a, hasImage) {
+function createPrompt(a) {
   return `${RULES}${STRUCTURE}
 DADOS CONFIRMADOS PELA PESSOA
 ${profileText(a)}
 
 TAREFA
-${hasImage ? "Use o print apenas como contexto (nome da pessoa e bio atual). As bios devem se basear nas informações confirmadas acima, não em suposições tiradas do print." : ""}
 1. Crie 5 primeiras linhas marcantes, uma para cada abordagem, nesta ordem: "Identificação com o público", "Posicionamento profissional", "Proposta de valor", "Linguagem autoral", "Apresentação direta da especialidade". Cada uma com até 60 caracteres, personalizada (nada que sirva para qualquer profissional).
 2. Crie 3 bios completas:
    - "direta": ${VERSION_DEFS.direta.brief}
@@ -231,10 +208,10 @@ FORMATO: responda SOMENTE com JSON válido, sem markdown:
 }`;
 }
 
-function linesPrompt(a, extracted, baseLine, exclude) {
+function linesPrompt(a, baseLine, exclude) {
   return `${RULES}
 DADOS CONFIRMADOS PELA PESSOA
-${profileText(a, extracted)}
+${profileText(a)}
 
 TAREFA
 ${baseLine
@@ -246,11 +223,11 @@ FORMATO: SOMENTE JSON válido: { "firstLines": [ { "approach": "", "text": "" } 
 ${baseLine ? 'Use "approach": "Variação" em todas.' : ""}`;
 }
 
-function versionPrompt(a, extracted, key, exclude, firstLine) {
+function versionPrompt(a, key, exclude, firstLine) {
   const def = VERSION_DEFS[key];
   return `${RULES}${STRUCTURE}
 DADOS CONFIRMADOS PELA PESSOA
-${profileText(a, extracted)}
+${profileText(a)}
 
 TAREFA
 Crie UMA nova bio completa na abordagem "${def.label}": ${def.brief}
@@ -272,36 +249,33 @@ Reescreva mantendo a mesma abordagem, a primeira linha (ou uma versão mais curt
 FORMATO: SOMENTE JSON válido: { "text": "" }`;
 }
 
-// ---------- Gemini ----------
+// ---------- IA (Vercel AI Gateway) ----------
+// A IA roda pelo AI Gateway do próprio Vercel: dentro do projeto a autenticação é automática
+// (token OIDC do Vercel), sem chave de outro serviço. AI_GATEWAY_API_KEY é opcional.
+const GATEWAY = "https://ai-gateway.vercel.sh/v1";
 // Prazo total de cada requisição, com folga antes do corte do Vercel (maxDuration 60 s).
 const REQUEST_BUDGET_MS = 50000;
-// Desligar o "raciocínio" estendido do Gemini deixa a resposta várias vezes mais rápida.
-// Modelos que recusarem a opção são lembrados e chamados sem ela.
-const noThinking = new Set();
 
-const STATIC_MODELS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-2.5-flash-lite"];
+// Preferência: modelos rápidos e baratos que escrevem bem em português.
+const PREFERRED = [/^anthropic\/claude-haiku/, /^openai\/gpt-[\d.]+-mini$/, /^anthropic\/claude-sonnet/];
+const STATIC_MODELS = ["anthropic/claude-haiku-4.5", "openai/gpt-5-mini", "anthropic/claude-sonnet-4.5"];
 let modelCache = { list: null, at: 0 };
 
-// Pergunta ao Google quais modelos esta chave pode usar (nomes mudam e modelos antigos são
-// desativados) e monta a ordem de preferência: Flash mais novo e estável primeiro, Lite por último.
+// Consulta o catálogo do Gateway (nomes de modelos mudam) e escolhe, em cada família
+// preferida, a versão mais nova.
 async function discoverModels() {
   if (modelCache.list && Date.now() - modelCache.at < 60 * 60 * 1000) return modelCache.list;
   try {
-    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000", {
-      headers: { "x-goog-api-key": process.env.GEMINI_API_KEY },
-      signal: AbortSignal.timeout(5000)
-    });
+    const r = await fetch(`${GATEWAY}/models`, { signal: AbortSignal.timeout(5000) });
     if (!r.ok) return null;
-    const data = await r.json();
-    const version = (n) => Number((/gemini-(\d+(?:\.\d+)?)/.exec(n) || [])[1] || 0);
-    const list = (data.models || [])
-      .filter((m) => (m.supportedGenerationMethods || []).includes("generateContent"))
-      .map((m) => String(m.name || "").replace(/^models\//, ""))
-      .filter((n) => /^gemini-.*flash/.test(n) && !/image|tts|audio|live|embed|thinking|exp/.test(n))
-      .sort((x, y) => {
-        const score = (n) => (/lite/.test(n) ? 2 : 0) + (/preview/.test(n) ? 1 : 0);
-        return score(x) - score(y) || version(y) - version(x) || (/latest/.test(y) ? 1 : 0) - (/latest/.test(x) ? 1 : 0);
-      });
+    const ids = ((await r.json()).data || [])
+      .filter((m) => !m.type || m.type === "language")
+      .map((m) => String(m.id || ""));
+    const version = (id) => (id.match(/\d+(?:\.\d+)?/g) || ["0"]).map(Number);
+    const newer = (x, y) => { const a = version(x), b = version(y);
+      for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] || 0) !== (b[i] || 0)) return (b[i] || 0) - (a[i] || 0);
+      return 0; };
+    const list = PREFERRED.map((re) => ids.filter((id) => re.test(id) && !/preview|thinking/.test(id)).sort(newer)[0]).filter(Boolean);
     if (list.length) modelCache = { list, at: Date.now() };
     return list.length ? list : null;
   } catch (_) {
@@ -311,50 +285,46 @@ async function discoverModels() {
 
 async function modelChain() {
   const found = await discoverModels();
-  const list = [process.env.GEMINI_MODEL, ...(found || STATIC_MODELS), process.env.GEMINI_FALLBACK_MODEL];
-  const unique = [...new Set(list.filter(Boolean))];
-  // No máximo 4 tentativas: 3 modelos "normais" + o melhor Lite, para caber no prazo.
-  const lite = unique.filter((n) => /lite/.test(n));
-  const main = unique.filter((n) => !/lite/.test(n)).slice(0, 3);
-  return [...main, ...lite.slice(0, 1)].slice(0, 4);
+  return [...new Set([process.env.AI_MODEL, ...(found || STATIC_MODELS)].filter(Boolean))].slice(0, 3);
 }
 
 // Códigos curtos exibidos na tela para diagnóstico (sem nenhum dado sensível).
-function geminiError(code, attempts = []) {
+function aiError(code, attempts = []) {
   const err = new Error(`IA indisponível (${code}).`);
   err.status = 502;
-  // Ex.: "LIMITE · flash-latest=LIMITE 2.5-flash=MODELO" — mostra o que aconteceu em cada modelo.
-  const detail = attempts.map((t) => `${t.model.replace(/^gemini-/, "")}=${t.code}`).join(" ");
+  // Ex.: "LIMITE · claude-haiku-4.5=LIMITE gpt-5-mini=MODELO" — o que aconteceu em cada modelo.
+  const detail = attempts.map((t) => `${t.model.split("/").pop()}=${t.code}`).join(" ");
   err.code = detail ? `${code} · ${detail}` : code;
   return err;
 }
 
-async function callGemini(prompt, image, temperature, deadline) {
-  const parts = [{ text: prompt }];
-  if (image) {
-    parts.push({ text: "Print do perfil do Instagram enviado pela pessoa. Leia somente o que estiver realmente visível." });
-    parts.push({ inlineData: image });
-  }
+async function callAI(prompt, temperature, ctx) {
+  const token = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN || ctx.oidc;
+  if (!token) throw aiError("ACESSO");
 
   const models = await modelChain();
   const attempts = [];
   let lastCode = "SEM-RESPOSTA";
-  for (let i = 0; i < models.length; i++) {
-    const model = models[i];
-    const remaining = deadline - Date.now();
+  for (const model of models) {
+    const remaining = ctx.deadline - Date.now();
     if (remaining < 5000) { if (lastCode === "SEM-RESPOSTA") lastCode = "TEMPO"; break; }
-    const generationConfig = { responseMimeType: "application/json", temperature };
-    const sentThinking = !noThinking.has(model);
-    if (sentThinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
 
     let r, raw = "";
     try {
-      r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      r = await fetch(`${GATEWAY}/chat/completions`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY },
-        body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          model,
+          temperature,
+          max_tokens: 3000,
+          messages: [
+            { role: "system", content: "Você responde somente com um objeto JSON válido, sem markdown e sem texto fora do JSON." },
+            { role: "user", content: prompt }
+          ]
+        }),
         // Um modelo lento não pode consumir todo o prazo: sobra tempo para o próximo.
-        signal: AbortSignal.timeout(Math.min(remaining - 1500, 32000))
+        signal: AbortSignal.timeout(Math.min(remaining - 1500, 35000))
       });
       raw = await r.text();
     } catch (e) {
@@ -367,33 +337,27 @@ async function callGemini(prompt, image, temperature, deadline) {
     try { data = JSON.parse(raw); } catch (_) {}
 
     if (r.ok) {
-      const cand = data?.candidates?.[0];
-      const text = cand?.content?.parts?.filter((p) => !p.thought).map((p) => p.text || "").join("") || "";
+      const content = data?.choices?.[0]?.message?.content;
+      const text = Array.isArray(content) ? content.map((c) => c?.text || "").join("") : String(content || "");
       const parsed = parseJson(text);
       if (parsed) return parsed;
-      lastCode = data?.promptFeedback?.blockReason || cand?.finishReason === "SAFETY" ? "BLOQUEIO" : "FORMATO";
+      lastCode = "FORMATO";
       attempts.push({ model, code: lastCode });
-      console.error(`bio: ${model} -> ${lastCode} (${cand?.finishReason || "-"})`);
+      console.error(`bio: ${model} -> FORMATO (${data?.choices?.[0]?.finish_reason || "-"})`);
       continue;
     }
 
-    const msg = String(data?.error?.message || "");
-    console.error(`bio: ${model} -> HTTP ${r.status}: ${msg.slice(0, 200)}`);
-    if (r.status === 400 && /think/i.test(msg) && sentThinking) {
-      noThinking.add(model);
-      i--; // repete o mesmo modelo sem a opção
-      continue;
-    }
-    if (/api key/i.test(msg) || r.status === 401 || (r.status === 403 && /key|permission/i.test(msg))) {
-      throw geminiError("CHAVE", attempts); // chave inválida/bloqueada: trocar de modelo não resolve
-    }
+    const msg = String(data?.error?.message || raw || "").slice(0, 200);
+    console.error(`bio: ${model} -> HTTP ${r.status}: ${msg}`);
+    if (r.status === 401 || r.status === 403) throw aiError("ACESSO", [...attempts, { model, code: "ACESSO" }]);
+    if (r.status === 402) throw aiError("CREDITO", [...attempts, { model, code: "CREDITO" }]);
     lastCode = r.status === 429 ? "LIMITE" : r.status === 404 ? "MODELO" : `G${r.status}`;
     attempts.push({ model, code: lastCode });
   }
   // O código principal é o problema mais relevante, não só o último.
-  const order = ["LIMITE", "TEMPO", "BLOQUEIO", "FORMATO", "CONEXAO"];
+  const order = ["LIMITE", "TEMPO", "FORMATO", "CONEXAO"];
   const main = order.find((c) => attempts.some((t) => t.code === c)) || lastCode;
-  throw geminiError(main, attempts);
+  throw aiError(main, attempts);
 }
 
 function parseJson(text) {
@@ -406,11 +370,11 @@ function parseJson(text) {
 
 // Garante o limite de caracteres: reescreve com a IA até 2 vezes; como último recurso,
 // remove linhas finais menos importantes sem cortar palavras no meio.
-async function enforceLimit(a, text, deadline) {
+async function enforceLimit(a, text, ctx) {
   let t = cleanBio(text);
-  for (let i = 0; i < 2 && charCount(t) > BIO_LIMIT && deadline - Date.now() > 12000; i++) {
+  for (let i = 0; i < 2 && charCount(t) > BIO_LIMIT && ctx.deadline - Date.now() > 12000; i++) {
     try {
-      const r = await callGemini(rewritePrompt(a, t, charCount(t)), null, 0.5, Math.min(deadline, Date.now() + 15000));
+      const r = await callAI(rewritePrompt(a, t, charCount(t)), 0.5, { ...ctx, deadline: Math.min(ctx.deadline, Date.now() + 15000) });
       if (r && typeof r.text === "string" && r.text.trim()) t = cleanBio(r.text);
     } catch (_) { break; }
   }
@@ -435,8 +399,8 @@ function cleanLines(list, exclude = []) {
     .slice(0, 5);
 }
 
-async function buildVersion(a, key, v, deadline) {
-  const text = await enforceLimit(a, v?.text || "", deadline);
+async function buildVersion(a, key, v, ctx) {
+  const text = await enforceLimit(a, v?.text || "", ctx);
   return { key, label: VERSION_DEFS[key].label, text, strategy: str(v?.strategy, 400), chars: charCount(text) };
 }
 
@@ -444,53 +408,37 @@ async function buildVersion(a, key, v, deadline) {
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (req.method !== "POST") return res.status(405).json({ error: "Método não permitido." });
-  if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: "O serviço de IA ainda não foi configurado." });
 
   const ip = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "anon";
   if (rateLimited(ip)) return res.status(429).json({ error: "Muitas solicitações em pouco tempo. Aguarde alguns minutos e tente novamente." });
 
-  const deadline = Date.now() + REQUEST_BUDGET_MS;
+  const ctx = { deadline: Date.now() + REQUEST_BUDGET_MS, oidc: req.headers["x-vercel-oidc-token"] };
   try {
     const body = req.body || {};
     const mode = body.mode || "generate";
-    const { answers, errors } = validateAnswers({ ...(body.answers || {}), hasImage: !!body.image });
+    const { answers, errors } = validateAnswers(body.answers || {});
     if (errors.length) return res.status(400).json({ error: errors[0], errors });
 
-    const extracted = body.extracted && typeof body.extracted === "object" ? body.extracted : null;
-
     if (mode === "generate") {
-      const image = answers.noBio ? null : parseImage(body.image);
       const [analysis, creation] = await Promise.allSettled([
-        callGemini(analysisPrompt(answers, !!image), image, 0.7, deadline),
-        callGemini(createPrompt(answers, !!image), image, 0.9, deadline)
+        callAI(analysisPrompt(answers), 0.7, ctx),
+        callAI(createPrompt(answers), 0.9, ctx)
       ]);
       if (analysis.status === "rejected") throw analysis.reason;
       const out = analysis.value || {};
 
-      if (out.status === "unreadable" && !answers.bioText) {
-        return res.status(200).json({
-          status: "unreadable",
-          reason: str(out.unreadableReason, 200) || "Não conseguimos ler a bio no print com segurança."
-        });
-      }
       if (creation.status === "rejected") throw creation.reason;
       const created = creation.value || {};
 
       const versionsIn = Array.isArray(created.versions) ? created.versions : [];
       const versions = await Promise.all(
-        Object.keys(VERSION_DEFS).map((key, i) => buildVersion(answers, key, versionsIn.find((v) => v?.key === key) || versionsIn[i], deadline))
+        Object.keys(VERSION_DEFS).map((key, i) => buildVersion(answers, key, versionsIn.find((v) => v?.key === key) || versionsIn[i], ctx))
       );
       if (versions.some((v) => !v.text)) throw Object.assign(new Error("A IA não gerou todas as versões."), { status: 502 });
 
-      const ex = out.extracted || {};
       return res.status(200).json({
         status: "ok",
         limit: BIO_LIMIT,
-        extracted: {
-          name: str(ex.name, 100), username: str(ex.username, 60), bio: str(ex.bio, 400),
-          highlights: Array.isArray(ex.highlights) ? ex.highlights.slice(0, 12).map((h) => str(h, 40)).filter(Boolean) : [],
-          link: str(ex.link, 120)
-        },
         improvements: (Array.isArray(out.improvements) ? out.improvements : []).slice(0, 4).map((p) => ({
           type: ["erro", "oportunidade", "fundamento"].includes(p?.type) ? p.type : "oportunidade",
           title: str(p?.title, 160), why: str(p?.why, 500), how: str(p?.how, 500)
@@ -510,7 +458,7 @@ export default async function handler(req, res) {
     if (mode === "lines") {
       const exclude = (Array.isArray(body.exclude) ? body.exclude : []).slice(0, 40).map((x) => str(x, 120));
       const baseLine = str(body.baseLine, 120);
-      const out = await callGemini(linesPrompt(answers, extracted, baseLine, exclude), null, 1, deadline);
+      const out = await callAI(linesPrompt(answers, baseLine, exclude), 1, ctx);
       const firstLines = cleanLines(out.firstLines, exclude);
       if (!firstLines.length) throw Object.assign(new Error("Nenhuma frase nova gerada."), { status: 502 });
       return res.status(200).json({ firstLines });
@@ -520,19 +468,19 @@ export default async function handler(req, res) {
       const key = body.versionKey;
       if (!VERSION_DEFS[key]) return res.status(400).json({ error: "Versão inválida." });
       const exclude = (Array.isArray(body.exclude) ? body.exclude : []).slice(0, 10).map((x) => str(x, 300));
-      const out = await callGemini(versionPrompt(answers, extracted, key, exclude, str(body.firstLine, 120)), null, 1, deadline);
-      const version = await buildVersion(answers, key, out, deadline);
+      const out = await callAI(versionPrompt(answers, key, exclude, str(body.firstLine, 120)), 1, ctx);
+      const version = await buildVersion(answers, key, out, ctx);
       if (!version.text) throw Object.assign(new Error("A IA não gerou a versão."), { status: 502 });
       return res.status(200).json({ version });
     }
 
     return res.status(400).json({ error: "Modo inválido." });
   } catch (e) {
-    const status = e.status || (/imagem|Formato/.test(e.message) ? 400 : 500);
+    const status = e.status || 500;
     if (status !== 400) console.error("bio:", e.code || e.message);
     return res.status(status).json({
       error: status === 400 ? e.message
-        : String(e.code || "").startsWith("CHAVE") ? "O serviço de IA está com a chave de acesso inválida. Avise a Tenas Digital."
+        : /^(ACESSO|CREDITO)/.test(e.code || "") ? "O serviço de IA da Tenas Digital está temporariamente indisponível. Tente mais tarde."
         : "Não foi possível concluir a geração agora. Suas respostas foram mantidas — tente novamente em alguns segundos.",
       code: status === 400 ? undefined : (e.code || "SERVIDOR")
     });

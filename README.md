@@ -89,30 +89,41 @@ Página pública: **`/bio`** (ex.: `https://SEU-PROJETO.vercel.app/bio`). É ess
 
 Arquivos:
 - `bio/index.html` — formulário em 3 etapas + tela de resultado (mobile first).
-- `api/bio.js` — análise da bio e geração das novas versões (Gemini, chave só no servidor).
+- `api/bio.js` — análise e geração das bios (Vercel AI Gateway, só no servidor).
 - `api/bio-config.js` — entrega ao navegador apenas configurações públicas (WhatsApp, limites).
 - `vercel.json` — dá até 60 s para a geração.
 
-## Variáveis de ambiente (Vercel → Settings → Environment Variables)
+## IA: Vercel AI Gateway
+A IA do gerador roda pelo **AI Gateway do próprio Vercel**. Dentro do projeto a autenticação é automática (token OIDC do Vercel): não precisa de chave do Google nem de outro serviço. O Vercel dá um crédito mensal grátis; se acabar, é só adicionar crédito em Vercel → AI Gateway.
 
-| Variável | Obrigatória | Uso |
-|---|---|---|
-| `GEMINI_API_KEY` | sim | Mesma chave usada pelo CRM. |
-| `TENAS_WHATSAPP` | não | Número do WhatsApp com DDI e DDD, só dígitos. Padrão: WhatsApp oficial da Tenas (`5583991192672`). |
-| `TENAS_WHATSAPP_MESSAGE` | não | Substitui a mensagem inicial do WhatsApp. |
-| `BIO_CHAR_LIMIT` | não | Limite de caracteres da bio (padrão 150, o atual do Instagram). |
-| `BIO_RATE_LIMIT` | não | Pedidos por IP a cada 10 min (padrão 25). |
-| `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL` | não | Modelos usados (padrão `gemini-flash-latest` / `gemini-flash-lite-latest`). |
+O servidor consulta o catálogo do Gateway e usa o modelo rápido mais novo disponível (Claude Haiku; depois GPT mini e Claude Sonnet como reserva).
+
+## Variáveis de ambiente (opcionais)
+
+| Variável | Uso |
+|---|---|
+| `AI_GATEWAY_API_KEY` | Só se a autenticação automática não funcionar: chave criada em Vercel → AI Gateway → API Keys. |
+| `AI_MODEL` | Força um modelo específico do Gateway (ex.: `anthropic/claude-haiku-4.5`). |
+| `TENAS_WHATSAPP` | Número do WhatsApp com DDI e DDD, só dígitos. Padrão: WhatsApp oficial da Tenas (`5583991192672`). |
+| `TENAS_WHATSAPP_MESSAGE` | Substitui a mensagem inicial do WhatsApp. |
+| `BIO_CHAR_LIMIT` | Limite de caracteres da bio (padrão 150, o atual do Instagram). |
+| `BIO_RATE_LIMIT` | Pedidos por IP a cada 10 min (padrão 25). |
+
+O CRM (`/api/analyze`) continua usando o Gemini com `GEMINI_API_KEY`.
+
+## Códigos de erro mostrados na página
+- `ACESSO`: o Vercel não autenticou o AI Gateway → crie `AI_GATEWAY_API_KEY`.
+- `CREDITO`: o crédito do AI Gateway acabou → adicione crédito no Vercel.
+- `LIMITE`, `TEMPO`, `MODELO`, `FORMATO`: problema temporário ou de modelo; o detalhe de cada tentativa aparece depois do código.
 
 ## Como funciona
 1. Etapas: Sobre você (nome opcional, profissão, área, objetivo) → Público e atendimento (On-line, Presencial ou Ambos; cidade quando houver presencial) → Sua bio (o que mais incomoda, em opções; explicação e bio colada são opcionais) + estilo.
-2. As respostas vão para `/api/bio`, que faz duas chamadas ao Gemini em paralelo: análise (pontos de melhoria, bônus com 3 nomes de perfil para a busca, próximos passos) e criação (5 primeiras linhas e 3 bios).
+2. As respostas vão para `/api/bio`, que faz duas chamadas à IA em paralelo: análise (pontos de melhoria, bônus com 3 nomes de perfil para a busca, próximos passos) e criação (5 primeiras linhas e 3 bios).
 3. O servidor confere o limite de caracteres e pede reescrita automática quando uma versão passa do limite.
-4. Se um modelo do Gemini falhar, outro é tentado. Em caso de erro, a página mostra um código curto (CHAVE, LIMITE, MODELO, TEMPO…) e o motivo fica no log do Vercel.
+4. Se um modelo falhar, outro é tentado. Em caso de erro, a página mostra um código curto e o motivo fica no log do Vercel.
 5. No resultado dá para copiar, gerar outra versão de cada bio, gerar novas frases e pedir variações de uma frase selecionada.
 
 ## Privacidade
-- Nada é salvo: as respostas ficam em memória só durante a requisição e são enviadas ao Gemini para gerar o resultado.
+- Nada é salvo: as respostas ficam em memória só durante a requisição e são enviadas à IA (Vercel AI Gateway) para gerar o resultado.
 - Não há banco de dados, cadastro, e-mail ou telefone. As respostas ficam apenas no `sessionStorage` do próprio navegador (somem ao fechar a aba).
 - O contato comercial só acontece se a pessoa tocar no botão do WhatsApp.
-- **Importante:** use a API do Gemini em um **plano pago** (faturamento ativo). No nível gratuito, o Google pode usar o conteúdo enviado para melhorar seus produtos, o que contradiz o aviso de privacidade da página.

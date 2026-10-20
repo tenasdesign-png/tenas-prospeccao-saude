@@ -378,7 +378,7 @@ footer{margin-top:50px;text-align:center;font-size:11px;letter-spacing:.2em;text
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 
-  let cfg = { whatsapp: null, whatsappMessage: "", maxUploadMb: 10, bioLimit: 150 };
+  let cfg = { whatsapp: null, whatsappMessage: "", bioLimit: 150 };
   const EMPTY = { name:"", profession:"", professionOther:"", specialty:"", goal:"", audience:"", audienceOther:"", modality:"", city:"", style:"", difficulties:[], difficultyText:"", bioText:"" };
   let A = { ...EMPTY };
   let step = 1;
@@ -602,7 +602,7 @@ footer{margin-top:50px;text-align:center;font-size:11px;letter-spacing:.2em;text
     if (t.dataset.regen) {
       const key = t.dataset.regen; busy(t, true);
       try {
-        const { version } = await api({ mode: "version", versionKey: key, extracted: result.extracted, exclude: shown.versions[key], firstLine: selectedLine });
+        const { version } = await api({ mode: "version", versionKey: key, exclude: shown.versions[key], firstLine: selectedLine });
         shown.versions[key].push(version.text);
         result.versions = result.versions.map((v) => (v.key === key ? version : v));
         renderVersions(); toast("Nova versão criada");
@@ -616,7 +616,7 @@ footer{margin-top:50px;text-align:center;font-size:11px;letter-spacing:.2em;text
   async function moreLines(btn, baseLine) {
     busy(btn, true);
     try {
-      const { firstLines } = await api({ mode: "lines", extracted: result.extracted, exclude: shown.lines, baseLine });
+      const { firstLines } = await api({ mode: "lines", exclude: shown.lines, baseLine });
       shown.lines.push(...firstLines.map((l) => l.text));
       result.firstLines = firstLines; selectedLine = null; renderLines();
       $("#lines").scrollIntoView({ behavior: "smooth", block: "start" });
