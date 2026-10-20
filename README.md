@@ -93,28 +93,33 @@ Arquivos:
 - `api/bio-config.js` — entrega ao navegador apenas configurações públicas (WhatsApp, limites).
 - `vercel.json` — dá até 60 s para a geração.
 
-## IA: Vercel AI Gateway
-A IA do gerador roda pelo **AI Gateway do próprio Vercel**. Dentro do projeto a autenticação é automática (token OIDC do Vercel): não precisa de chave do Google nem de outro serviço. O Vercel dá um crédito mensal grátis; se acabar, é só adicionar crédito em Vercel → AI Gateway.
+## IA: vários provedores
+O gerador usa o primeiro provedor de IA que responder, entre os configurados no Vercel:
+1. **Google Gemini** — `GEMINI_API_KEY` (a mesma chave do CRM);
+2. **OpenAI** — `OPENAI_API_KEY`;
+3. **Vercel AI Gateway** — automático dentro do Vercel ou `AI_GATEWAY_API_KEY`.
 
-O servidor consulta o catálogo do Gateway e usa o modelo rápido mais novo disponível (Claude Haiku; depois GPT mini e Claude Sonnet como reserva).
+Em cada provedor, os modelos disponíveis para a chave são consultados na hora, então o gerador continua funcionando quando um modelo é desativado.
 
 ## Variáveis de ambiente (opcionais)
 
 | Variável | Uso |
 |---|---|
 | `AI_GATEWAY_API_KEY` | Só se a autenticação automática não funcionar: chave criada em Vercel → AI Gateway → API Keys. |
-| `AI_MODEL` | Força um modelo específico do Gateway (ex.: `anthropic/claude-haiku-4.5`). |
+| `GEMINI_MODEL` / `OPENAI_MODEL` / `AI_MODEL` | Forçam um modelo específico no Gemini, na OpenAI ou no Gateway. |
 | `TENAS_WHATSAPP` | Número do WhatsApp com DDI e DDD, só dígitos. Padrão: WhatsApp oficial da Tenas (`5583991192672`). |
 | `TENAS_WHATSAPP_MESSAGE` | Substitui a mensagem inicial do WhatsApp. |
 | `BIO_CHAR_LIMIT` | Limite de caracteres da bio (padrão 150, o atual do Instagram). |
 | `BIO_RATE_LIMIT` | Pedidos por IP a cada 10 min (padrão 25). |
 
-O CRM (`/api/analyze`) continua usando o Gemini com `GEMINI_API_KEY`.
 
 ## Códigos de erro mostrados na página
-- `ACESSO`: o Vercel não autenticou o AI Gateway → crie `AI_GATEWAY_API_KEY`.
-- `CREDITO`: o crédito do AI Gateway acabou → adicione crédito no Vercel.
-- `LIMITE`, `TEMPO`, `MODELO`, `FORMATO`: problema temporário ou de modelo; o detalhe de cada tentativa aparece depois do código.
+O código mostra o resultado de cada tentativa, ex.: `LIMITE · gemini:gemini-3-flash=LIMITE vercel:claude-haiku-5.5=ACESSO`.
+- `ACESSO`: chave inválida ou acesso negado naquele provedor.
+- `CREDITO`: sem crédito ou cobrança desativada naquele provedor.
+- `LIMITE`: cota de uso atingida (no Gemini gratuito, ativar a cobrança resolve).
+- `SEM-IA`: nenhuma chave de IA configurada no projeto.
+- `TEMPO`, `MODELO`, `FORMATO`: problema temporário ou de modelo; o próximo provedor é tentado.
 
 ## Como funciona
 1. Etapas: Sobre você (nome opcional, profissão, área, objetivo) → Público e atendimento (On-line, Presencial ou Ambos; cidade quando houver presencial) → Sua bio (o que mais incomoda, em opções; explicação e bio colada são opcionais) + estilo.
