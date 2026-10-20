@@ -100,21 +100,19 @@ Arquivos:
 | `GEMINI_API_KEY` | sim | Mesma chave usada pelo CRM. |
 | `TENAS_WHATSAPP` | não | Número do WhatsApp com DDI e DDD, só dígitos. Padrão: WhatsApp oficial da Tenas (`5583991192672`). |
 | `TENAS_WHATSAPP_MESSAGE` | não | Substitui a mensagem inicial do WhatsApp. |
-| `MAX_UPLOAD_MB` | não | Tamanho máximo do print (padrão 10). |
 | `BIO_CHAR_LIMIT` | não | Limite de caracteres da bio (padrão 150, o atual do Instagram). |
 | `BIO_RATE_LIMIT` | não | Pedidos por IP a cada 10 min (padrão 25). |
 | `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL` | não | Modelos usados (padrão `gemini-flash-latest` / `gemini-flash-lite-latest`). |
 
 ## Como funciona
-1. Etapas: Sobre você → Público e atendimento → Sua bio atual (print, texto colado ou "criar do zero") + estilo.
-2. O navegador reduz o print (máx. 1600 px, JPEG) e envia com as respostas para `/api/bio`.
-3. A IA lê o print, aponta de 2 a 4 pontos (erro × oportunidade), cria 5 primeiras linhas, 3 bios, sugestão de campo Nome e próximos passos.
-4. O servidor confere o limite de caracteres e pede reescrita automática quando uma versão passa do limite.
-5. Se o print estiver ilegível, a pessoa volta à etapa 3 com as respostas mantidas e pode enviar outro print ou colar o texto.
-6. No resultado dá para copiar, gerar outra versão de cada bio, gerar novas frases e pedir variações de uma frase selecionada (sem reenviar o print).
+1. Etapas: Sobre você (nome opcional, profissão, área, objetivo) → Público e atendimento (On-line, Presencial ou Ambos; cidade quando houver presencial) → Sua bio atual (texto colado ou "criar do zero") + estilo.
+2. As respostas vão para `/api/bio`, que faz duas chamadas ao Gemini em paralelo: análise (pontos de melhoria, campo Nome, próximos passos) e criação (5 primeiras linhas e 3 bios).
+3. O servidor confere o limite de caracteres e pede reescrita automática quando uma versão passa do limite.
+4. Se um modelo do Gemini falhar, outro é tentado. Em caso de erro, a página mostra um código curto (CHAVE, LIMITE, MODELO, TEMPO…) e o motivo fica no log do Vercel.
+5. No resultado dá para copiar, gerar outra versão de cada bio, gerar novas frases e pedir variações de uma frase selecionada.
 
 ## Privacidade
-- O print não é salvo: fica em memória só durante a requisição e é enviado ao Gemini para leitura.
+- Nada é salvo: as respostas ficam em memória só durante a requisição e são enviadas ao Gemini para gerar o resultado.
 - Não há banco de dados, cadastro, e-mail ou telefone. As respostas ficam apenas no `sessionStorage` do próprio navegador (somem ao fechar a aba).
 - O contato comercial só acontece se a pessoa tocar no botão do WhatsApp.
 - **Importante:** use a API do Gemini em um **plano pago** (faturamento ativo). No nível gratuito, o Google pode usar o conteúdo enviado para melhorar seus produtos, o que contradiz o aviso de privacidade da página.
