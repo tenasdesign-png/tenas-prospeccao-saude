@@ -289,23 +289,28 @@ async function modelChain() {
 }
 
 // Códigos curtos exibidos na tela para diagnóstico (sem nenhum dado sensível).
-function aiError(code, attempts = []) {
+function aiError(code, attempts = [], hint = "") {
   const err = new Error(`IA indisponível (${code}).`);
   err.status = 502;
   // Ex.: "LIMITE · claude-haiku-4.5=LIMITE gpt-5-mini=MODELO" — o que aconteceu em cada modelo.
   const detail = attempts.map((t) => `${t.model.split("/").pop()}=${t.code}`).join(" ");
-  err.code = detail ? `${code} · ${detail}` : code;
+  err.code = [code, detail, hint && `"${hint}"`].filter(Boolean).join(" · ");
   return err;
 }
 
 async function callAI(prompt, temperature, ctx) {
-  const token = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN || ctx.oidc;
-  if (!token) throw aiError("ACESSO");
+  // Credenciais possíveis, em ordem: chave criada no painel, token OIDC do ambiente, token OIDC
+  // enviado pelo Vercel na requisição. Se uma for recusada, tenta a próxima.
+  const tokens = [...new Set([process.env.AI_GATEWAY_API_KEY, process.env.VERCEL_OIDC_TOKEN, ctx.oidc].filter(Boolean))];
+  if (!tokens.length) throw aiError("ACESSO", [], "sem token OIDC");
+  let t = 0;
 
   const models = await modelChain();
   const attempts = [];
   let lastCode = "SEM-RESPOSTA";
-  for (const model of models) {
+  let hint = "";
+  for (let i = 0; i < models.length; i++) {
+    const model = models[i];
     const remaining = ctx.deadline - Date.now();
     if (remaining < 5000) { if (lastCode === "SEM-RESPOSTA") lastCode = "TEMPO"; break; }
 
@@ -313,7 +318,7 @@ async function callAI(prompt, temperature, ctx) {
     try {
       r = await fetch(`${GATEWAY}/chat/completions`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokens[t]}` },
         body: JSON.stringify({
           model,
           temperature,
@@ -349,15 +354,20 @@ async function callAI(prompt, temperature, ctx) {
 
     const msg = String(data?.error?.message || raw || "").slice(0, 200);
     console.error(`bio: ${model} -> HTTP ${r.status}: ${msg}`);
-    if (r.status === 401 || r.status === 403) throw aiError("ACESSO", [...attempts, { model, code: "ACESSO" }]);
-    if (r.status === 402) throw aiError("CREDITO", [...attempts, { model, code: "CREDITO" }]);
+    // Mensagem do Vercel, encurtada e sem nada parecido com token, para o diagnóstico na tela.
+    hint = msg.replace(/[A-Za-z0-9_\-.]{24,}/g, "…").replace(/["\n]/g, " ").trim().slice(0, 140);
+    if (r.status === 401 || r.status === 403) {
+      if (++t < tokens.length) { i--; continue; } // tenta a próxima credencial no mesmo modelo
+      throw aiError("ACESSO", [...attempts, { model, code: "ACESSO" }], hint);
+    }
+    if (r.status === 402) throw aiError("CREDITO", [...attempts, { model, code: "CREDITO" }], hint);
     lastCode = r.status === 429 ? "LIMITE" : r.status === 404 ? "MODELO" : `G${r.status}`;
     attempts.push({ model, code: lastCode });
   }
   // O código principal é o problema mais relevante, não só o último.
   const order = ["LIMITE", "TEMPO", "FORMATO", "CONEXAO"];
   const main = order.find((c) => attempts.some((t) => t.code === c)) || lastCode;
-  throw aiError(main, attempts);
+  throw aiError(main, attempts, hint);
 }
 
 function parseJson(text) {
