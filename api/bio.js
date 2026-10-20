@@ -219,44 +219,63 @@ FORMATO: SOMENTE JSON válido: { "text": "" }`;
 }
 
 // ---------- Gemini ----------
-async function callGemini(prompt, image, temperature = 0.9) {
+// Prazo total de cada requisição, com folga antes do corte do Vercel (maxDuration 60 s).
+const REQUEST_BUDGET_MS = 50000;
+// Desligar o "raciocínio" estendido do Gemini deixa a resposta várias vezes mais rápida.
+// Se o modelo configurado não aceitar a opção, seguimos sem ela (e lembramos disso).
+let thinkingSupported = true;
+
+async function callGemini(prompt, image, temperature, deadline) {
   const parts = [{ text: prompt }];
   if (image) {
     parts.push({ text: "Print do perfil do Instagram enviado pela pessoa. Leia somente o que estiver realmente visível." });
     parts.push({ inlineData: image });
   }
-  const body = {
-    contents: [{ role: "user", parts }],
-    generationConfig: { responseMimeType: "application/json", temperature }
-  };
   const primary = process.env.GEMINI_MODEL || "gemini-flash-latest";
   const fallback = process.env.GEMINI_FALLBACK_MODEL || "gemini-flash-lite-latest";
-  const models = [primary, primary, fallback];
+  const models = [primary, fallback, fallback];
 
   let lastError = "";
   for (let i = 0; i < models.length; i++) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${models[i]}:generateContent`;
-    const r = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY },
-      body: JSON.stringify(body)
-    });
-    const raw = await r.text();
+    const remaining = deadline - Date.now();
+    if (remaining < 4000) { lastError = lastError || "tempo esgotado"; break; }
+    const generationConfig = { responseMimeType: "application/json", temperature, maxOutputTokens: 8192 };
+    if (thinkingSupported) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+
+    let r, raw = "";
+    try {
+      r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${models[i]}:generateContent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY },
+        body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig }),
+        signal: AbortSignal.timeout(remaining - 1500)
+      });
+      raw = await r.text();
+    } catch (e) {
+      lastError = e?.name === "TimeoutError" ? "tempo esgotado" : "falha de conexão";
+      continue;
+    }
     let data = {};
     try { data = JSON.parse(raw); } catch (_) {}
     if (r.ok) {
-      const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
+      const text = data?.candidates?.[0]?.content?.parts?.filter((p) => !p.thought).map((p) => p.text || "").join("") || "";
       const parsed = parseJson(text);
       if (parsed) return parsed;
       lastError = "formato inesperado";
-    } else {
-      lastError = `HTTP ${r.status}`;
-      const msg = (data?.error?.message || "").toLowerCase();
-      const transient = r.status === 429 || r.status >= 500 || msg.includes("overloaded") || msg.includes("high demand");
-      if (!transient) break;
+      continue;
     }
-    await new Promise((res) => setTimeout(res, 700 * (i + 1)));
+    lastError = `HTTP ${r.status}`;
+    const msg = (data?.error?.message || "").toLowerCase();
+    if (r.status === 400 && thinkingSupported && msg.includes("think")) {
+      thinkingSupported = false;
+      i--; // repete o mesmo modelo sem a opção
+      continue;
+    }
+    const transient = r.status === 429 || r.status >= 500 || msg.includes("overloaded") || msg.includes("high demand");
+    if (!transient) break;
+    await new Promise((res) => setTimeout(res, 500));
   }
+  console.error("bio: gemini falhou:", lastError);
   const err = new Error(`IA indisponível (${lastError}).`);
   err.status = 502;
   throw err;
@@ -272,11 +291,11 @@ function parseJson(text) {
 
 // Garante o limite de caracteres: reescreve com a IA até 2 vezes; como último recurso,
 // remove linhas finais menos importantes sem cortar palavras no meio.
-async function enforceLimit(a, text) {
+async function enforceLimit(a, text, deadline) {
   let t = cleanBio(text);
-  for (let i = 0; i < 2 && charCount(t) > BIO_LIMIT; i++) {
+  for (let i = 0; i < 2 && charCount(t) > BIO_LIMIT && deadline - Date.now() > 12000; i++) {
     try {
-      const r = await callGemini(rewritePrompt(a, t, charCount(t)), null, 0.5);
+      const r = await callGemini(rewritePrompt(a, t, charCount(t)), null, 0.5, Math.min(deadline, Date.now() + 15000));
       if (r && typeof r.text === "string" && r.text.trim()) t = cleanBio(r.text);
     } catch (_) { break; }
   }
@@ -301,8 +320,8 @@ function cleanLines(list, exclude = []) {
     .slice(0, 5);
 }
 
-async function buildVersion(a, key, v) {
-  const text = await enforceLimit(a, v?.text || "");
+async function buildVersion(a, key, v, deadline) {
+  const text = await enforceLimit(a, v?.text || "", deadline);
   return { key, label: VERSION_DEFS[key].label, text, strategy: str(v?.strategy, 400), chars: charCount(text) };
 }
 
@@ -315,6 +334,7 @@ export default async function handler(req, res) {
   const ip = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "anon";
   if (rateLimited(ip)) return res.status(429).json({ error: "Muitas solicitações em pouco tempo. Aguarde alguns minutos e tente novamente." });
 
+  const deadline = Date.now() + REQUEST_BUDGET_MS;
   try {
     const body = req.body || {};
     const mode = body.mode || "generate";
@@ -328,7 +348,7 @@ export default async function handler(req, res) {
       if (!image && !answers.noBio && !answers.bioText) {
         return res.status(400).json({ error: "Envie um print do perfil, cole o texto da bio ou marque que ainda não tem bio." });
       }
-      const out = await callGemini(generatePrompt(answers, !!image), image);
+      const out = await callGemini(generatePrompt(answers, !!image), image, 0.9, deadline);
 
       if (out.status === "unreadable" && !answers.bioText) {
         return res.status(200).json({
@@ -339,7 +359,7 @@ export default async function handler(req, res) {
 
       const versionsIn = Array.isArray(out.versions) ? out.versions : [];
       const versions = await Promise.all(
-        Object.keys(VERSION_DEFS).map((key, i) => buildVersion(answers, key, versionsIn.find((v) => v?.key === key) || versionsIn[i]))
+        Object.keys(VERSION_DEFS).map((key, i) => buildVersion(answers, key, versionsIn.find((v) => v?.key === key) || versionsIn[i], deadline))
       );
       if (versions.some((v) => !v.text)) throw Object.assign(new Error("A IA não gerou todas as versões."), { status: 502 });
 
@@ -371,7 +391,7 @@ export default async function handler(req, res) {
     if (mode === "lines") {
       const exclude = (Array.isArray(body.exclude) ? body.exclude : []).slice(0, 40).map((x) => str(x, 120));
       const baseLine = str(body.baseLine, 120);
-      const out = await callGemini(linesPrompt(answers, extracted, baseLine, exclude), null, 1);
+      const out = await callGemini(linesPrompt(answers, extracted, baseLine, exclude), null, 1, deadline);
       const firstLines = cleanLines(out.firstLines, exclude);
       if (!firstLines.length) throw Object.assign(new Error("Nenhuma frase nova gerada."), { status: 502 });
       return res.status(200).json({ firstLines });
@@ -381,8 +401,8 @@ export default async function handler(req, res) {
       const key = body.versionKey;
       if (!VERSION_DEFS[key]) return res.status(400).json({ error: "Versão inválida." });
       const exclude = (Array.isArray(body.exclude) ? body.exclude : []).slice(0, 10).map((x) => str(x, 300));
-      const out = await callGemini(versionPrompt(answers, extracted, key, exclude, str(body.firstLine, 120)), null, 1);
-      const version = await buildVersion(answers, key, out);
+      const out = await callGemini(versionPrompt(answers, extracted, key, exclude, str(body.firstLine, 120)), null, 1, deadline);
+      const version = await buildVersion(answers, key, out, deadline);
       if (!version.text) throw Object.assign(new Error("A IA não gerou a versão."), { status: 502 });
       return res.status(200).json({ version });
     }

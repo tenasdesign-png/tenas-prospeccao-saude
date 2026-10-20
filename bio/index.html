@@ -554,9 +554,20 @@ footer{margin-top:50px;text-align:center;font-size:11px;letter-spacing:.2em;text
 
   // ---------- API ----------
   async function api(payload) {
-    const r = await fetch("/api/bio", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answers: A, ...payload }) });
+    let r;
+    try {
+      r = await fetch("/api/bio", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers: A, ...payload }), signal: window.AbortSignal && AbortSignal.timeout ? AbortSignal.timeout(70000) : undefined
+      });
+    } catch (_) {
+      throw new Error("A conexão falhou ou demorou demais. Confira sua internet e toque em “Gerar minhas bios” de novo — suas respostas continuam aqui.");
+    }
     let data = {}; try { data = await r.json(); } catch (_) {}
-    if (!r.ok) throw new Error(data.error || "Não foi possível concluir agora. Tente novamente.");
+    if (!r.ok) throw new Error(data.error || (r.status === 504 || r.status === 502
+      ? "A geração demorou mais que o esperado. Toque em “Gerar minhas bios” de novo — suas respostas continuam aqui."
+      : r.status === 413 ? "A imagem ficou grande demais. Tente um print menor ou cole o texto da bio."
+      : "Não foi possível concluir agora. Tente novamente."));
     return data;
   }
 
