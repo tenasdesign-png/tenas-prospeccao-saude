@@ -89,7 +89,7 @@ Página pública: **`/bio`** (ex.: `https://SEU-PROJETO.vercel.app/bio`). É ess
 
 Arquivos:
 - `bio/index.html` — formulário em 3 etapas + tela de resultado (mobile first).
-- `api/bio.js` — análise do print e geração das bios (Gemini, chave só no servidor).
+- `api/bio.js` — análise da bio e geração das novas versões (Gemini, chave só no servidor).
 - `api/bio-config.js` — entrega ao navegador apenas configurações públicas (WhatsApp, limites).
 - `vercel.json` — dá até 60 s para a geração.
 
