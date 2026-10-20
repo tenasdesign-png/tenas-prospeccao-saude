@@ -24,6 +24,11 @@ const AUDIENCES = [
   "Idosos.", "Atletas e praticantes de atividade física.", "Empresas e instituições.", "Público geral.", "Outro público."
 ];
 const MODALITIES = ["On-line.", "Presencial."];
+const MODALITY_OPTIONS = {
+  "On-line.": ["On-line."],
+  "Presencial.": ["Presencial."],
+  "Ambos: presencial e on-line.": ["Presencial.", "On-line."]
+};
 const STYLES = [
   "Profissional e acolhedor.", "Elegante e sofisticado.", "Moderno e descontraído.", "Especialista e objetivo.",
   "Próximo e humanizado.", "Criativo e marcante.", "Prefiro que a inteligência artificial escolha."
@@ -67,7 +72,10 @@ function validateAnswers(a) {
     goal: str(a.goal, 80),
     audience: str(a.audience, 80),
     audienceOther: str(a.audienceOther, 120),
-    modalities: Array.isArray(a.modalities) ? a.modalities.filter((m) => MODALITIES.includes(m)) : [],
+    name: str(a.name, 80),
+    // Seleção única no formulário ("Ambos" = presencial e on-line); aceita o formato antigo em lista.
+    modalities: MODALITY_OPTIONS[a.modality] ||
+      (Array.isArray(a.modalities) ? a.modalities.filter((m) => MODALITIES.includes(m)) : []),
     city: formatCity(str(a.city, 80)),
     style: str(a.style, 80),
     noBio: !!a.noBio,
@@ -78,10 +86,11 @@ function validateAnswers(a) {
   if (!GOALS.includes(out.goal)) errors.push("Selecione seu principal objetivo.");
   if (!AUDIENCES.includes(out.audience)) errors.push("Selecione o público que deseja atrair.");
   if (out.audience === "Outro público." && !out.audienceOther) errors.push("Informe o público que deseja alcançar.");
-  if (!out.modalities.length) errors.push("Selecione pelo menos uma modalidade de atendimento.");
+  if (!out.modalities.length) errors.push("Selecione como funciona seu atendimento.");
   if (out.modalities.includes("Presencial.") && !out.city) errors.push("Informe a cidade do atendimento presencial.");
   if (!out.modalities.includes("Presencial.")) out.city = "";
   if (!STYLES.includes(out.style)) errors.push("Selecione um estilo.");
+  if (!out.noBio && !out.bioText && !a.hasImage) errors.push("Cole o texto da sua bio ou marque que ainda não tem uma.");
   return { answers: out, errors };
 }
 
@@ -98,6 +107,7 @@ function profileText(a, extracted) {
   const profession = a.profession === "Outra profissão da área da saúde" ? a.professionOther : a.profession;
   const audience = a.audience === "Outro público." ? a.audienceOther : a.audience.replace(/\.$/, "");
   const lines = [
+    `Nome da pessoa: ${a.name || "não informado"}`,
     `Profissão (área): ${profession}`,
     `Especialidade/área de atuação informada: ${a.specialty || "não informada"}`,
     `Principal objetivo no Instagram: ${a.goal.replace(/\.$/, "")}`,
@@ -124,7 +134,7 @@ REGRAS INEGOCIÁVEIS
 3. Uma área de interesse ou atuação NÃO equivale a título de especialista. Só use "especialista" se a pessoa escreveu explicitamente que é especialista/possui título. Prefira "atuação em", "atendimento a", "foco em".
 4. Respeite a ética publicitária dos conselhos (CFM, CFP, CFN, CFO, COFFITO, CFFa, COFEN, CFF, CFBM, CONFEF, CFMV etc.): nada de promessa ou garantia de resultado, "antes e depois", sensacionalismo, superlativos ("o melhor", "referência número 1"), preços, promoções ou autopromoção enganosa.
 5. Evite clichês genéricos, como: "transformando vidas", "cuidando de você com amor", "sua saúde em primeiro lugar", "apaixonada pelo que faço", "realizando sonhos", "seu sorriso é minha missão", "especialista em você", "cuidar é minha missão", "gratidão".
-6. Gênero: só flexione a profissão (ex.: Psicóloga/Psicólogo) se o gênero estiver claro pelo nome no print. Caso contrário, use substantivos comuns de dois gêneros (Nutricionista, Dentista, Fisioterapeuta) ou o nome da área ("Psicologia para...", "Nutrição para...").
+6. Gênero: só flexione a profissão (ex.: Psicóloga/Psicólogo) se o gênero estiver claro pelo nome informado (ou pelo nome no print, se houver). Caso contrário, use substantivos comuns de dois gêneros (Nutricionista, Dentista, Fisioterapeuta) ou o nome da área ("Psicologia para...", "Nutrição para...").
 7. Cidade: use exatamente a cidade informada para atendimento presencial, sempre no formato "Cidade - UF" (ex.: "São Paulo - SP"); nunca acrescente outras. Se o atendimento for somente on-line, não cite cidade.
 8. Emojis: no máximo 2 por bio, apenas se combinarem com o estilo. Estilos "Elegante e sofisticado" e "Especialista e objetivo" pedem pouco ou nenhum emoji.
 9. Limite do Instagram: cada bio completa deve ter no máximo ${BIO_LIMIT} caracteres contando espaços, quebras de linha e emojis (emoji conta como 2). Mire entre 90 e ${BIO_LIMIT - 10}.
@@ -162,7 +172,7 @@ TAREFA
    Não aponte como ausente algo que não aparece no print mas foi confirmado no formulário — nesse caso, oriente a incluir na bio de forma objetiva, sem tratar como falha da pessoa.
    Se a bio já for boa em algum aspecto, você pode reconhecer isso brevemente no texto de outro ponto, sem elogios vazios.`}
    Cada ponto: "title" (frase curta e específica, ex.: "Sua bio não deixa claro quem você atende."), "why" (por que isso importa, 1–2 frases), "how" (como corrigir, prático e adaptado ao perfil).
-3. Sugira o campo Nome do Instagram ("nameField"): até ${NAME_LIMIT} caracteres, combinando o nome da pessoa (somente se legível no print; senão use "[Seu nome]") com a área/palavra-chave que ajude na busca. Explique em "why".
+3. Sugira o campo Nome do Instagram ("nameField"): até ${NAME_LIMIT} caracteres, combinando o nome da pessoa (o nome informado ou legível no print; se não houver, use "[Seu nome]") com a área/palavra-chave que ajude na busca. Explique em "why".
 4. Traga de 3 a 5 próximos passos personalizados ("nextSteps") para o perfil, como: campo Nome, destaques (cite os existentes se legíveis), posts fixados, chamada para ação, estratégia de conteúdo coerente com o posicionamento. Úteis por si só, sem exigir contratação.
 
 FORMATO: responda SOMENTE com JSON válido, sem markdown:
@@ -379,7 +389,7 @@ export default async function handler(req, res) {
   try {
     const body = req.body || {};
     const mode = body.mode || "generate";
-    const { answers, errors } = validateAnswers(body.answers || {});
+    const { answers, errors } = validateAnswers({ ...(body.answers || {}), hasImage: !!body.image });
     if (errors.length) return res.status(400).json({ error: errors[0], errors });
 
     const extracted = body.extracted && typeof body.extracted === "object" ? body.extracted : null;
