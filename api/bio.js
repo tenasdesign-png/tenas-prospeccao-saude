@@ -33,6 +33,17 @@ const STYLES = [
   "Profissional e acolhedor.", "Elegante e sofisticado.", "Moderno e descontraído.", "Especialista e objetivo.",
   "Próximo e humanizado.", "Criativo e marcante.", "Prefiro que a inteligência artificial escolha."
 ];
+const NO_BIO = "Ainda não tenho bio. Quero criar do zero.";
+const DIFFICULTIES = [
+  "Não sei o que escrever.",
+  "Não explica bem o que eu faço.",
+  "Não fica claro para quem eu atendo.",
+  "Parece genérica, igual à de todo mundo.",
+  "Não transmite confiança ou autoridade.",
+  "Não convida a pessoa a agendar.",
+  "Tenho muito a dizer e pouco espaço.",
+  NO_BIO
+];
 const VERSION_DEFS = {
   direta: { label: "Direta e estratégica", brief: "Priorize clareza: profissão, área de atuação, público e chamada para ação. Quem lê entende em 3 segundos o que a pessoa faz e para quem." },
   autoral: { label: "Autoral e marcante", brief: "Priorize uma primeira linha diferenciada e uma apresentação com personalidade, sem comprometer a clareza profissional (a profissão ou área precisa continuar compreensível)." },
@@ -78,7 +89,9 @@ function validateAnswers(a) {
       (Array.isArray(a.modalities) ? a.modalities.filter((m) => MODALITIES.includes(m)) : []),
     city: formatCity(str(a.city, 80)),
     style: str(a.style, 80),
-    noBio: !!a.noBio,
+    difficulties: Array.isArray(a.difficulties) ? a.difficulties.filter((d) => DIFFICULTIES.includes(d)) : [],
+    difficultyText: str(a.difficultyText, 300),
+    noBio: false,
     bioText: str(a.bioText, 600)
   };
   if (!PROFESSIONS.includes(out.profession)) errors.push("Selecione sua profissão.");
@@ -90,7 +103,10 @@ function validateAnswers(a) {
   if (out.modalities.includes("Presencial.") && !out.city) errors.push("Informe a cidade do atendimento presencial.");
   if (!out.modalities.includes("Presencial.")) out.city = "";
   if (!STYLES.includes(out.style)) errors.push("Selecione um estilo.");
-  if (!out.noBio && !out.bioText && !a.hasImage) errors.push("Cole o texto da sua bio ou marque que ainda não tem uma.");
+  out.noBio = !!a.noBio || out.difficulties.includes(NO_BIO);
+  if (!out.difficulties.length && !out.difficultyText && !out.bioText && !out.noBio && !a.hasImage) {
+    errors.push("Conte qual é a sua dificuldade com a bio.");
+  }
   return { answers: out, errors };
 }
 
@@ -117,6 +133,9 @@ function profileText(a, extracted) {
     `Estilo desejado: ${a.style.replace(/\.$/, "")}`
   ];
   if (a.noBio) lines.push("Situação: a pessoa ainda não tem bio e quer criar uma do zero.");
+  const diffs = a.difficulties.filter((d) => d !== NO_BIO);
+  if (diffs.length) lines.push(`Dificuldades que a pessoa sente com a bio atual: ${diffs.map((d) => d.replace(/\.$/, "")).join("; ")}`);
+  if (a.difficultyText) lines.push(`Nas palavras da pessoa: """${a.difficultyText}"""`);
   if (a.bioText) lines.push(`Texto da bio atual colado pela pessoa:\n"""${a.bioText}"""`);
   if (extracted && (extracted.bio || extracted.name)) {
     lines.push(`Leitura anterior do perfil (já confirmada): nome="${str(extracted.name, 100)}", bio="""${str(extracted.bio, 400)}""", destaques=${JSON.stringify((extracted.highlights || []).slice(0, 12).map((h) => str(h, 40)))}`);
@@ -158,21 +177,24 @@ function readPrintStep(hasImage) {
 // Chamada 1: leitura do print + diagnóstico + campo Nome + próximos passos.
 function analysisPrompt(a, hasImage) {
   const scratch = a.noBio && !a.bioText;
+  const fromDifficulties = !scratch && !a.bioText && !hasImage;
   return `${RULES}
 DADOS CONFIRMADOS PELA PESSOA
 ${profileText(a)}
 
 TAREFA
-1. ${readPrintStep(hasImage)}${hasImage ? ` Se a bio não estiver legível com segurança E não houver texto colado, responda com "status":"unreadable" e explique brevemente em "unreadableReason" (ex.: "a imagem está desfocada", "a bio está cortada").` : ""}
+1. ${fromDifficulties ? "A pessoa não enviou a bio atual: ela contou as dificuldades que sente. Não afirme nada sobre o texto da bio dela, porque você não o viu." : readPrintStep(hasImage)}${hasImage ? ` Se a bio não estiver legível com segurança E não houver texto colado, responda com "status":"unreadable" e explique brevemente em "unreadableReason" (ex.: "a imagem está desfocada", "a bio está cortada").` : ""}
 2. ${scratch
     ? `A pessoa não tem bio. Em "improvements", traga de 2 a 4 FUNDAMENTOS que a bio dela precisa comunicar, considerando profissão, público, objetivo e modalidade (use "type":"fundamento").`
+    : fromDifficulties
+    ? `Em "improvements", traga de 2 a 4 pontos que respondam diretamente às dificuldades relatadas (priorize as que ela marcou). Para cada uma, explique por que isso costuma acontecer e como resolver no caso dela, usando profissão, público, objetivo, cidade e modalidade. Use "type":"oportunidade". Não invente problemas que ela não relatou; se ela relatou só uma dificuldade, complete com fundamentos importantes para o objetivo dela ("type":"fundamento").`
     : `Analise a bio atual considerando: clareza da profissão e área; qualidade da primeira linha; facilidade para entender quem é atendido; proposta de valor; uso do campo Nome; informações relevantes de atendimento; cidade quando presencial e pertinente; chamada para ação; frases genéricas ou irrelevantes; coerência com público e objetivo; organização e legibilidade; oportunidades de diferenciação.
    Traga de 2 a 4 pontos prioritários, apenas os que você realmente observa. Não invente problemas para preencher a lista.
    Classifique cada um como "erro" (problema real) ou "oportunidade" (melhoria opcional). Uma frase autoral não é erro só por não citar a profissão.
    Não aponte como ausente algo que não aparece no print mas foi confirmado no formulário — nesse caso, oriente a incluir na bio de forma objetiva, sem tratar como falha da pessoa.
    Se a bio já for boa em algum aspecto, você pode reconhecer isso brevemente no texto de outro ponto, sem elogios vazios.`}
    Cada ponto: "title" (frase curta e específica, ex.: "Sua bio não deixa claro quem você atende."), "why" (por que isso importa, 1–2 frases), "how" (como corrigir, prático e adaptado ao perfil).
-3. Sugira o campo Nome do Instagram ("nameField"): até ${NAME_LIMIT} caracteres, combinando o nome da pessoa (o nome informado ou legível no print; se não houver, use "[Seu nome]") com a área/palavra-chave que ajude na busca. Explique em "why".
+3. BÔNUS — nome do perfil para facilitar a busca ("nameFields"): o campo Nome do Instagram entra na busca, então deve conter as palavras que um paciente digitaria. Crie 3 opções, cada uma com no máximo ${NAME_LIMIT} caracteres, no formato "Nome | Profissão + área/público" e, se houver atendimento presencial, "em Cidade" (só o nome da cidade, sem UF). Exemplo do formato (outra profissão): "Geovanna | Social Media da Saúde em São Paulo". Use o nome informado; se não houver, use "[Seu nome]". Varie as palavras-chave entre as opções (profissão, área de atuação, público). Em "nameWhy", explique em 1 frase por que isso ajuda a ser encontrado(a).
 4. Traga de 3 a 5 próximos passos personalizados ("nextSteps") para o perfil, como: campo Nome, destaques (cite os existentes se legíveis), posts fixados, chamada para ação, estratégia de conteúdo coerente com o posicionamento. Úteis por si só, sem exigir contratação.
 
 FORMATO: responda SOMENTE com JSON válido, sem markdown:
@@ -181,7 +203,8 @@ FORMATO: responda SOMENTE com JSON válido, sem markdown:
  "unreadableReason": "",
  "extracted": { "name": "", "username": "", "bio": "", "highlights": [], "link": "" },
  "improvements": [ { "type": "erro" | "oportunidade" | "fundamento", "title": "", "why": "", "how": "" } ],
- "nameField": { "suggestion": "", "why": "" },
+ "nameFields": ["", "", ""],
+ "nameWhy": "",
  "nextSteps": [ { "title": "", "text": "" } ]
 }`;
 }
@@ -396,9 +419,6 @@ export default async function handler(req, res) {
 
     if (mode === "generate") {
       const image = answers.noBio ? null : parseImage(body.image);
-      if (!image && !answers.noBio && !answers.bioText) {
-        return res.status(400).json({ error: "Envie um print do perfil, cole o texto da bio ou marque que ainda não tem bio." });
-      }
       const [analysis, creation] = await Promise.allSettled([
         callGemini(analysisPrompt(answers, !!image), image, 0.7, deadline),
         callGemini(createPrompt(answers, !!image), image, 0.9, deadline)
@@ -436,10 +456,10 @@ export default async function handler(req, res) {
         })).filter((p) => p.title),
         firstLines: cleanLines(created.firstLines),
         versions,
-        nameField: {
-          suggestion: str(out.nameField?.suggestion, NAME_LIMIT),
-          why: str(out.nameField?.why, 400)
-        },
+        nameFields: (Array.isArray(out.nameFields) ? out.nameFields : [])
+          .map((n) => str(typeof n === "string" ? n : n?.suggestion, 120))
+          .filter((n) => n && n.length <= NAME_LIMIT).slice(0, 3),
+        nameWhy: str(out.nameWhy, 300),
         nextSteps: (Array.isArray(out.nextSteps) ? out.nextSteps : []).slice(0, 5).map((s) => ({
           title: str(s?.title, 120), text: str(s?.text, 500)
         })).filter((s) => s.title)

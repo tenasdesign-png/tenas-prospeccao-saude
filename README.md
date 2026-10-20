@@ -105,8 +105,8 @@ Arquivos:
 | `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL` | não | Modelos usados (padrão `gemini-flash-latest` / `gemini-flash-lite-latest`). |
 
 ## Como funciona
-1. Etapas: Sobre você (nome opcional, profissão, área, objetivo) → Público e atendimento (On-line, Presencial ou Ambos; cidade quando houver presencial) → Sua bio atual (texto colado ou "criar do zero") + estilo.
-2. As respostas vão para `/api/bio`, que faz duas chamadas ao Gemini em paralelo: análise (pontos de melhoria, campo Nome, próximos passos) e criação (5 primeiras linhas e 3 bios).
+1. Etapas: Sobre você (nome opcional, profissão, área, objetivo) → Público e atendimento (On-line, Presencial ou Ambos; cidade quando houver presencial) → Sua bio (o que mais incomoda, em opções; explicação e bio colada são opcionais) + estilo.
+2. As respostas vão para `/api/bio`, que faz duas chamadas ao Gemini em paralelo: análise (pontos de melhoria, bônus com 3 nomes de perfil para a busca, próximos passos) e criação (5 primeiras linhas e 3 bios).
 3. O servidor confere o limite de caracteres e pede reescrita automática quando uma versão passa do limite.
 4. Se um modelo do Gemini falhar, outro é tentado. Em caso de erro, a página mostra um código curto (CHAVE, LIMITE, MODELO, TEMPO…) e o motivo fica no log do Vercel.
 5. No resultado dá para copiar, gerar outra versão de cada bio, gerar novas frases e pedir variações de uma frase selecionada.
