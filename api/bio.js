@@ -52,6 +52,12 @@ const str = (v, max = 200) => (typeof v === "string" ? v.trim().slice(0, max) : 
 // Contagem conservadora: emojis contam como 2, como no contador do Instagram.
 const charCount = (s) => (s || "").length;
 
+// "são paulo, sp" / "São Paulo/SP" / "São Paulo - sp" -> "São Paulo - SP"
+function formatCity(c) {
+  const m = /^(.*?)[\s,\/–-]+([A-Za-z]{2})\.?$/.exec(c);
+  return m && m[1].trim() ? `${m[1].trim()} - ${m[2].toUpperCase()}` : c;
+}
+
 function validateAnswers(a) {
   const errors = [];
   const out = {
@@ -62,7 +68,7 @@ function validateAnswers(a) {
     audience: str(a.audience, 80),
     audienceOther: str(a.audienceOther, 120),
     modalities: Array.isArray(a.modalities) ? a.modalities.filter((m) => MODALITIES.includes(m)) : [],
-    city: str(a.city, 80),
+    city: formatCity(str(a.city, 80)),
     style: str(a.style, 80),
     noBio: !!a.noBio,
     bioText: str(a.bioText, 600)
@@ -118,15 +124,19 @@ REGRAS INEGOCIÁVEIS
 3. Uma área de interesse ou atuação NÃO equivale a título de especialista. Só use "especialista" se a pessoa escreveu explicitamente que é especialista/possui título. Prefira "atuação em", "atendimento a", "foco em".
 4. Respeite a ética publicitária dos conselhos (CFM, CFP, CFN, CFO, COFFITO, CFFa, COFEN, CFF, CFBM, CONFEF, CFMV etc.): nada de promessa ou garantia de resultado, "antes e depois", sensacionalismo, superlativos ("o melhor", "referência número 1"), preços, promoções ou autopromoção enganosa.
 5. Evite clichês genéricos, como: "transformando vidas", "cuidando de você com amor", "sua saúde em primeiro lugar", "apaixonada pelo que faço", "realizando sonhos", "seu sorriso é minha missão", "especialista em você", "cuidar é minha missão", "gratidão".
-6. Gênero: só flexione a profissão (ex.: Psicóloga/Psicólogo, Nutricionista, Dentista) se o gênero estiver claro pelo nome no print. Caso contrário, prefira formas neutras como o nome da área ("Psicologia | ...", "Nutrição clínica") ou substantivos comuns de dois gêneros.
-7. Cidade: use exatamente a cidade informada para atendimento presencial; nunca acrescente outras. Se o atendimento for somente on-line, não cite cidade.
+6. Gênero: só flexione a profissão (ex.: Psicóloga/Psicólogo) se o gênero estiver claro pelo nome no print. Caso contrário, use substantivos comuns de dois gêneros (Nutricionista, Dentista, Fisioterapeuta) ou o nome da área ("Psicologia para...", "Nutrição para...").
+7. Cidade: use exatamente a cidade informada para atendimento presencial, sempre no formato "Cidade - UF" (ex.: "São Paulo - SP"); nunca acrescente outras. Se o atendimento for somente on-line, não cite cidade.
 8. Emojis: no máximo 2 por bio, apenas se combinarem com o estilo. Estilos "Elegante e sofisticado" e "Especialista e objetivo" pedem pouco ou nenhum emoji.
 9. Limite do Instagram: cada bio completa deve ter no máximo ${BIO_LIMIT} caracteres contando espaços, quebras de linha e emojis (emoji conta como 2). Mire entre 90 e ${BIO_LIMIT - 10}.
-10. Use quebras de linha (\\n) para organizar a bio. Não use hashtags. Não inclua @, telefone ou link (o link fica no campo próprio do Instagram); a chamada para ação pode apontar para ele (ex.: "↓ Agende sua consulta").
+10. LINHA DE CONEXÃO (obrigatória em todas as bios): a profissão vem ligada ao público por uma frase que conecta, nunca por separadores. PROIBIDO o formato "Psicóloga | Mulheres", "Nutricionista • Adultos", "Dentista - Crianças". Escreva como "Psicóloga para mulheres cansadas de dar conta de tudo", "Psicóloga para mães que esqueceram de si", "Psicóloga para a comunidade LGBTQIA+", "Nutricionista para quem quer comer bem sem dieta da moda".
+   Descreva o público de forma humana e específica, a partir do público e da área de atuação informados (o momento, a dor ou o desejo dessas pessoas), sem estigmatizar e sem inventar um nicho que a pessoa não indicou. Se o público for amplo ("Público geral", "Adultos em geral"), conecte pela área de atuação ou pela necessidade que ela atende.
+   Nunca use "|" para separar profissão e público.
+11. Use quebras de linha (\\n) para organizar a bio. Não use hashtags. Não inclua @, telefone ou link (o link fica no campo próprio do Instagram); a chamada para ação pode apontar para ele (ex.: "↓ Agende sua consulta").
 `;
 
 const STRUCTURE = `
-ESTRUTURA FLEXÍVEL SUGERIDA (não obrigatória): 1ª linha = frase marcante ou posicionamento; 2ª linha = profissão, área e público; 3ª linha = cidade/modalidade (quando relevante) + chamada para ação. Reorganize quando outra composição comunicar melhor.
+ESTRUTURA FLEXÍVEL SUGERIDA (não obrigatória): 1ª linha = frase marcante ou posicionamento; 2ª linha = linha de conexão (profissão + "para" + público descrito de forma humana); 3ª linha = "Cidade - UF" e/ou on-line (quando relevante) + chamada para ação. Reorganize quando outra composição comunicar melhor.
+Exemplo ilustrativo (não copie): "Um espaço de cuidado para você se escutar. 🌿\nPsicóloga para mulheres cansadas de dar conta de tudo\nSão Paulo - SP e on-line\n↓ Agende sua conversa"
 `;
 
 function generatePrompt(a, hasImage) {

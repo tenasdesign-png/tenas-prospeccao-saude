@@ -98,7 +98,7 @@ Arquivos:
 | Variável | Obrigatória | Uso |
 |---|---|---|
 | `GEMINI_API_KEY` | sim | Mesma chave usada pelo CRM. |
-| `TENAS_WHATSAPP` | sim, para o botão aparecer | Número oficial com DDI e DDD, só dígitos (ex.: `55839XXXXXXXX`). Sem ele, o botão do WhatsApp fica oculto. |
+| `TENAS_WHATSAPP` | sim, para o botão aparecer | Número oficial com DDI e DDD, só dígitos (ex.: `5511XXXXXXXXX`). Sem ele, o botão do WhatsApp fica oculto. |
 | `TENAS_WHATSAPP_MESSAGE` | não | Substitui a mensagem inicial do WhatsApp. |
 | `MAX_UPLOAD_MB` | não | Tamanho máximo do print (padrão 10). |
 | `BIO_CHAR_LIMIT` | não | Limite de caracteres da bio (padrão 150, o atual do Instagram). |
