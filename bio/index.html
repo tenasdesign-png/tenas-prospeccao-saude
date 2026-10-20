@@ -564,10 +564,10 @@ footer{margin-top:50px;text-align:center;font-size:11px;letter-spacing:.2em;text
       throw new Error("A conexão falhou ou demorou demais. Confira sua internet e toque em “Gerar minhas bios” de novo — suas respostas continuam aqui.");
     }
     let data = {}; try { data = await r.json(); } catch (_) {}
-    if (!r.ok) throw new Error(data.error || (r.status === 504 || r.status === 502
+    if (!r.ok) throw Object.assign(new Error(data.error || (r.status === 504 || r.status === 502
       ? "A geração demorou mais que o esperado. Toque em “Gerar minhas bios” de novo — suas respostas continuam aqui."
       : r.status === 413 ? "A imagem ficou grande demais. Tente um print menor ou cole o texto da bio."
-      : "Não foi possível concluir agora. Tente novamente."));
+      : "Não foi possível concluir agora. Tente novamente.")), { code: data.code || (data.error ? "" : `HTTP${r.status}`) });
     return data;
   }
 
@@ -602,7 +602,7 @@ footer{margin-top:50px;text-align:center;font-size:11px;letter-spacing:.2em;text
       clearInterval(loadingTimer);
       goStep(3);
       const g = $("#gen-error");
-      g.innerHTML = `<b>Algo não saiu como esperado.</b>${esc(e.message)}`;
+      g.innerHTML = `<b>Algo não saiu como esperado.</b>${esc(e.message)}${e.code ? `<small style="display:block;margin-top:8px;opacity:.7">Código: ${esc(e.code)}</small>` : ""}`;
       g.hidden = false; g.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   }
