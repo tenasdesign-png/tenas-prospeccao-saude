@@ -155,32 +155,18 @@ ESTRUTURA FLEXÍVEL SUGERIDA (não obrigatória): 1ª linha = frase marcante ou 
 Exemplo ilustrativo (não copie): "Um espaço de cuidado para você se escutar. 🌿\nPsicóloga para mulheres cansadas de dar conta de tudo\nSão Paulo - SP e on-line\n↓ Agende sua conversa"
 `;
 
-// Chamada 1: diagnóstico + bônus de nome do perfil + próximos passos.
+// Chamada 1: bônus de nome do perfil + próximos passos.
 function analysisPrompt(a) {
-  const scratch = a.noBio && !a.bioText;
-  const fromDifficulties = !scratch && !a.bioText;
   return `${RULES}
 DADOS CONFIRMADOS PELA PESSOA
 ${profileText(a)}
 
 TAREFA
-1. ${fromDifficulties ? "A pessoa não enviou a bio atual: ela contou as dificuldades que sente. Não afirme nada sobre o texto da bio dela, porque você não o viu." : scratch ? "A pessoa ainda não tem bio." : "Use o texto colado como bio atual."}
-2. ${scratch
-    ? `A pessoa não tem bio. Em "improvements", traga de 2 a 4 FUNDAMENTOS que a bio dela precisa comunicar, considerando profissão, público, objetivo e modalidade (use "type":"fundamento").`
-    : fromDifficulties
-    ? `Em "improvements", traga de 2 a 4 pontos que respondam diretamente às dificuldades relatadas (priorize as que ela marcou). Para cada uma, explique por que isso costuma acontecer e como resolver no caso dela, usando profissão, público, objetivo, cidade e modalidade. Use "type":"oportunidade". Não invente problemas que ela não relatou; se ela relatou só uma dificuldade, complete com fundamentos importantes para o objetivo dela ("type":"fundamento").`
-    : `Analise a bio atual considerando: clareza da profissão e área; qualidade da primeira linha; facilidade para entender quem é atendido; proposta de valor; uso do campo Nome; informações relevantes de atendimento; cidade quando presencial e pertinente; chamada para ação; frases genéricas ou irrelevantes; coerência com público e objetivo; organização e legibilidade; oportunidades de diferenciação.
-   Traga de 2 a 4 pontos prioritários, apenas os que você realmente observa. Não invente problemas para preencher a lista.
-   Classifique cada um como "erro" (problema real) ou "oportunidade" (melhoria opcional). Uma frase autoral não é erro só por não citar a profissão.
-   Não aponte como ausente algo que não aparece na bio colada mas foi confirmado no formulário — nesse caso, oriente a incluir na bio de forma objetiva, sem tratar como falha da pessoa.
-   Se a bio já for boa em algum aspecto, você pode reconhecer isso brevemente no texto de outro ponto, sem elogios vazios.`}
-   Cada ponto: "title" (frase curta e específica, ex.: "Sua bio não deixa claro quem você atende."), "why" (por que isso importa, 1–2 frases), "how" (como corrigir, prático e adaptado ao perfil).
-3. BÔNUS — nome do perfil para facilitar a busca ("nameFields"): o campo Nome do Instagram entra na busca, então deve conter as palavras que um paciente digitaria. Crie 3 opções, cada uma com no máximo ${NAME_LIMIT} caracteres, no formato "Nome | Profissão + área/público" e, se houver atendimento presencial, "em Cidade" (só o nome da cidade, sem UF). Exemplo do formato (outra profissão): "Geovanna | Social Media da Saúde em São Paulo". Use o nome informado; se não houver, use "[Seu nome]". Varie as palavras-chave entre as opções (profissão, área de atuação, público). Em "nameWhy", explique em 1 frase por que isso ajuda a ser encontrado(a).
-4. Traga de 3 a 5 próximos passos personalizados ("nextSteps") para o perfil, como: campo Nome, destaques (cite os existentes se legíveis), posts fixados, chamada para ação, estratégia de conteúdo coerente com o posicionamento. Úteis por si só, sem exigir contratação.
+1. BÔNUS — nome do perfil para facilitar a busca ("nameFields"): o campo Nome do Instagram entra na busca, então deve conter as palavras que um paciente digitaria. Crie 3 opções, cada uma com no máximo ${NAME_LIMIT} caracteres, no formato "Nome | Profissão + área/público" e, se houver atendimento presencial, "em Cidade" (só o nome da cidade, sem UF). Exemplo do formato (outra profissão): "Geovanna | Social Media da Saúde em São Paulo". Use o nome informado; se não houver, use "[Seu nome]". Varie as palavras-chave entre as opções (profissão, área de atuação, público). Em "nameWhy", explique em 1 frase por que isso ajuda a ser encontrado(a).
+2. Traga 3 próximos passos personalizados ("nextSteps") para o perfil, curtos e práticos, como: destaques, posts fixados, chamada para ação, estratégia de conteúdo coerente com o posicionamento. Úteis por si só, sem exigir contratação. Se a pessoa contou dificuldades com a bio, use-as para escolher os passos.
 
 FORMATO: responda SOMENTE com JSON válido, sem markdown:
 {
- "improvements": [ { "type": "erro" | "oportunidade" | "fundamento", "title": "", "why": "", "how": "" } ],
  "nameFields": ["", "", ""],
  "nameWhy": "",
  "nextSteps": [ { "title": "", "text": "" } ]
@@ -581,10 +567,6 @@ export default async function handler(req, res) {
       return res.status(200).json({
         status: "ok",
         limit: BIO_LIMIT,
-        improvements: (Array.isArray(out.improvements) ? out.improvements : []).slice(0, 4).map((p) => ({
-          type: ["erro", "oportunidade", "fundamento"].includes(p?.type) ? p.type : "oportunidade",
-          title: str(p?.title, 160), why: str(p?.why, 500), how: str(p?.how, 500)
-        })).filter((p) => p.title),
         firstLines: cleanLines(created.firstLines),
         versions,
         nameFields: (Array.isArray(out.nameFields) ? out.nameFields : [])

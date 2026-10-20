@@ -118,25 +118,34 @@ details.paste[open] summary::before{content:"– "}
 .loading-steps li::before{content:"";position:absolute;left:4px;top:14px;width:8px;height:8px;border-radius:50%;background:var(--line-2);transition:background .3s}
 .loading-steps li.on{color:var(--ink)}
 .loading-steps li.on::before{background:var(--ink)}
+.timer{margin:22px auto 0;font-variant-numeric:tabular-nums;font-size:34px;font-weight:700;letter-spacing:.02em;color:var(--ink)}
+.timer-note{margin:4px 0 0;font-size:13px;color:var(--muted)}
+
+/* Bônus: presente */
+.gift{position:relative;margin-top:48px;border-radius:24px;padding:34px 20px 24px;text-align:center;color:var(--cream);overflow:hidden;
+  background:radial-gradient(120% 80% at 50% 0%,#6b4a35 0%,#3a2a20 45%,#241912 100%);box-shadow:0 20px 44px rgba(43,31,24,.28)}
+.gift::before{content:"";position:absolute;inset:-40% -60%;background:linear-gradient(115deg,transparent 42%,rgba(255,236,200,.16) 50%,transparent 58%);animation:shine 4.5s ease-in-out infinite}
+@keyframes shine{0%{transform:translateX(-30%)}60%,100%{transform:translateX(30%)}}
+.gift>*{position:relative}
+.gift-icon{display:block;width:74px;height:74px;margin:0 auto 14px;animation:wiggle 2.8s ease-in-out infinite;transform-origin:50% 90%}
+@keyframes wiggle{0%,70%,100%{transform:rotate(0)}75%{transform:rotate(-7deg)}80%{transform:rotate(6deg)}85%{transform:rotate(-4deg)}90%{transform:rotate(2deg)}}
+.gift-badge{display:inline-block;background:#d9b47a;color:#2b1f18;font-size:11px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;padding:7px 14px;border-radius:999px;margin-bottom:14px}
+.gift h2{color:#fffaf2;font-size:24px;line-height:1.2;margin:0 0 10px}
+.gift h2 em{font-style:normal;color:#e7c48e}
+.gift-sub{color:#e3d4c3;font-size:14px;margin:0 auto 20px;max-width:28em}
+.gift .namefield{background:rgba(255,250,242,.07);border:1px solid rgba(231,196,142,.35);box-shadow:none;text-align:left}
+.gift .namefield .bio-box{background:#fffaf2;border-color:transparent;color:var(--ink)}
+.gift .count{color:#e7c48e}
+.gift .btn.ghost{background:#e7c48e;border-color:#e7c48e;color:#2b1f18}
+.gift-how{font-size:12.5px;color:#cbb9a5;margin:14px 0 0}
+.gift-how b{color:#fffaf2}
 
 /* Resultado */
-.result-head{padding:30px 0 6px}
-.result-head h1{font-size:clamp(28px,7.5vw,40px)}
-.read{margin-top:18px;background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;font-size:13px;color:var(--muted)}
-.read b{color:var(--brown);font-weight:500}
-.read pre{white-space:pre-wrap;font:inherit;color:var(--ink);margin:6px 0 0}
 .block{margin-top:44px}
 .block-head{display:flex;align-items:baseline;gap:12px;padding-bottom:12px;border-bottom:1px solid var(--ink);margin-bottom:18px}
 .block-head .num{font-family:var(--display);font-weight:700;font-size:20px;color:var(--brown-2)}
 .block-head h2{font-size:22px}
 .card{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-bottom:12px;box-shadow:var(--shadow)}
-.tag{display:inline-block;font-size:10px;letter-spacing:.14em;text-transform:uppercase;padding:4px 9px;border-radius:999px;background:var(--cream-2);color:var(--brown);margin-bottom:10px}
-.tag.erro{background:#f3dfd7;color:#7c3524}
-.tag.fundamento{background:#e3e8dc;color:#3e5539}
-.imp h3{margin-bottom:8px}
-.imp p{margin:0 0 8px;color:var(--brown)}
-.imp .how{margin:12px 0 0;padding-top:12px;border-top:1px solid var(--line);color:var(--ink)}
-.imp .how b{font-weight:600}
 .sub-h{font-family:var(--display);font-weight:700;font-size:19px;margin:30px 0 4px}
 .sub-p{font-size:13px;color:var(--muted);margin:0 0 14px}
 .version .v-top{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
@@ -288,30 +297,21 @@ footer{margin-top:50px;text-align:center;font-size:11px;letter-spacing:.2em;text
   <!-- LOADING -->
   <section class="screen loading" id="s-loading" hidden aria-live="polite">
     <div class="orb" aria-hidden="true"></div>
-    <h2>Estamos analisando sua bio e criando novas possibilidades para o seu posicionamento.</h2>
+    <h2>Estamos criando suas novas bios.</h2>
+    <p class="timer" id="elapsed" aria-label="Tempo decorrido">0:00</p>
+    <p class="timer-note">Costuma levar menos de 1 minuto.</p>
     <ul class="loading-steps">
-      <li>Lendo sua bio</li>
-      <li>Identificando oportunidades</li>
+      <li>Entendendo seu perfil</li>
       <li>Criando primeiras linhas</li>
       <li>Escrevendo suas novas bios</li>
+      <li>Preparando seu bônus</li>
     </ul>
   </section>
 
   <!-- RESULTADO -->
   <section class="screen" id="s-result" hidden>
-    <div class="result-head">
-      <p class="eyebrow">Seu resultado</p>
-      <h1>Uma bio que diz <em>quem você é.</em></h1>
-      <div class="read" id="read" hidden></div>
-    </div>
-
-    <div class="block">
-      <div class="block-head"><span class="num">A.</span><h2 id="a-title">O que pode melhorar</h2></div>
-      <div id="improvements"></div>
-    </div>
-
-    <div class="block">
-      <div class="block-head"><span class="num">B.</span><h2>Sua bio renovada</h2></div>
+    <div class="block" style="margin-top:26px">
+      <div class="block-head"><h2>Suas novas bios</h2></div>
       <div id="versions"></div>
 
       <p class="sub-h">Banco de primeiras linhas</p>
@@ -329,15 +329,22 @@ footer{margin-top:50px;text-align:center;font-size:11px;letter-spacing:.2em;text
 
     </div>
 
-    <div class="block" id="bonus" hidden>
-      <div class="block-head"><span class="num">Bônus</span><h2>Nome do perfil</h2></div>
-      <p class="sub-p" id="bonus-why"></p>
+    <section class="gift" id="bonus" hidden aria-labelledby="gift-title">
+      <svg class="gift-icon" viewBox="0 0 64 64" aria-hidden="true">
+        <rect x="8" y="26" width="48" height="32" rx="4" fill="#f4ede3"/>
+        <rect x="5" y="18" width="54" height="12" rx="3" fill="#fffaf2"/>
+        <rect x="28" y="18" width="8" height="40" fill="#d9b47a"/>
+        <path d="M32 18c-4-8-14-12-16-6-2 5 8 7 16 6zm0 0c4-8 14-12 16-6 2 5-8 7-16 6z" fill="none" stroke="#d9b47a" stroke-width="3.5" stroke-linejoin="round"/>
+      </svg>
+      <span class="gift-badge">Bônus exclusivo</span>
+      <h2 id="gift-title">Um nome de perfil para você <em>ser encontrado(a) na busca</em></h2>
+      <p class="gift-sub" id="bonus-why"></p>
       <div id="names"></div>
-      <p class="sub-p">Para trocar: no Instagram, toque em <b>Editar perfil</b> → <b>Nome</b>. Seu @ continua o mesmo.</p>
-    </div>
+      <p class="gift-how">Para trocar: no Instagram, toque em <b>Editar perfil</b> → <b>Nome</b>. Seu @ continua o mesmo.</p>
+    </section>
 
     <div class="block">
-      <div class="block-head"><span class="num">C.</span><h2>Próximos passos</h2></div>
+      <div class="block-head"><h2>Próximos passos</h2></div>
       <ol class="steps" id="steps"></ol>
     </div>
 
@@ -372,7 +379,6 @@ footer{margin-top:50px;text-align:center;font-size:11px;letter-spacing:.2em;text
   const WIDE = new Set(["Outra profissão da área da saúde","Crianças e adolescentes e suas famílias.","Atletas e praticantes de atividade física.","Prefiro que a inteligência artificial escolha."]);
   const STEP_LABELS = ["Sobre você","Público e atendimento","Sua bio"];
   const STORE = "tenas_bio_answers_v3";
-  const NO_BIO = "Ainda não tenho bio. Quero criar do zero.";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -501,20 +507,25 @@ footer{margin-top:50px;text-align:center;font-size:11px;letter-spacing:.2em;text
     return data;
   }
 
-  let loadingTimer;
+  let loadingTimer, clockTimer;
   function startLoading() {
     show("s-loading");
     const items = $$(".loading-steps li"); items.forEach((li) => li.classList.remove("on"));
     let i = 0; items[0].classList.add("on");
-    loadingTimer = setInterval(() => { i++; if (items[i]) items[i].classList.add("on"); }, 3200);
+    loadingTimer = setInterval(() => { i++; if (items[i]) items[i].classList.add("on"); }, 5000);
+    // Cronômetro: mostra há quanto tempo a geração está rodando.
+    const t0 = Date.now(), clock = $("#elapsed");
+    const tick = () => { const sec = Math.floor((Date.now() - t0) / 1000); clock.textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`; };
+    tick(); clockTimer = setInterval(tick, 250);
   }
+  function stopLoading() { clearInterval(loadingTimer); clearInterval(clockTimer); }
 
   async function generate() {
     $("#gen-error").hidden = true;
     startLoading();
     try {
       const data = await api({ mode: "generate" });
-      clearInterval(loadingTimer);
+      stopLoading();
       result = data; selectedLine = null;
       shown.lines = data.firstLines.map((l) => l.text);
       Object.keys(shown.versions).forEach((k) => (shown.versions[k] = []));
@@ -522,7 +533,7 @@ footer{margin-top:50px;text-align:center;font-size:11px;letter-spacing:.2em;text
       renderResult();
       show("s-result");
     } catch (e) {
-      clearInterval(loadingTimer);
+      stopLoading();
       goStep(3);
       const g = $("#gen-error");
       g.innerHTML = `<b>Algo não saiu como esperado.</b>${esc(e.message)}${e.code ? `<small style="display:block;margin-top:8px;opacity:.7">Código: ${esc(e.code)}</small>` : ""}`;
@@ -533,29 +544,11 @@ footer{margin-top:50px;text-align:center;font-size:11px;letter-spacing:.2em;text
   // ---------- Resultado ----------
   function renderResult() {
     const r = result;
-    const scratch = A.difficulties.includes(NO_BIO) && !A.bioText.trim();
-    $("#a-title").textContent = scratch ? "O que sua bio precisa comunicar" : "O que pode melhorar";
-
-    const read = $("#read");
-    if (A.bioText.trim()) {
-      read.hidden = false;
-      read.innerHTML = `<b>Sua bio atual</b><pre>${esc(A.bioText.trim())}</pre>`;
-    } else read.hidden = true;
-
-    const tagName = { erro: "Ponto de atenção", oportunidade: "Oportunidade", fundamento: "Fundamento" };
-    $("#improvements").innerHTML = r.improvements.map((p) => `
-      <article class="card imp">
-        <span class="tag ${esc(p.type)}">${tagName[p.type] || "Oportunidade"}</span>
-        <h3>${esc(p.title)}</h3>
-        ${p.why ? `<p>${esc(p.why)}</p>` : ""}
-        ${p.how ? `<p class="how"><b>Como melhorar:</b> ${esc(p.how)}</p>` : ""}
-      </article>`).join("") || `<p class="note">Sua bio já está bem estruturada. Confira abaixo versões alternativas para testar.</p>`;
-
     renderVersions(); renderLines();
 
     const names = r.nameFields || [];
     $("#bonus").hidden = !names.length;
-    $("#bonus-why").textContent = `O campo Nome aparece em negrito no seu perfil e entra na busca do Instagram. ${r.nameWhy || ""}`.trim();
+    $("#bonus-why").textContent = `O Nome aparece em negrito no seu perfil e é o que o Instagram usa na busca. ${r.nameWhy || ""}`.trim();
     $("#names").innerHTML = names.map((n) => `
       <div class="card namefield"><div class="bio-box">${esc(n)}</div>
         <div class="v-foot"><span class="count">${n.length}/64</span>
