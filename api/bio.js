@@ -249,124 +249,201 @@ Reescreva mantendo a mesma abordagem, a primeira linha (ou uma versão mais curt
 FORMATO: SOMENTE JSON válido: { "text": "" }`;
 }
 
-// ---------- IA (Vercel AI Gateway) ----------
-// A IA roda pelo AI Gateway do próprio Vercel: dentro do projeto a autenticação é automática
-// (token OIDC do Vercel), sem chave de outro serviço. AI_GATEWAY_API_KEY é opcional.
-const GATEWAY = "https://ai-gateway.vercel.sh/v1";
+// ---------- IA: vários provedores, o primeiro que responder gera o resultado ----------
+// Usa o que estiver configurado no projeto do Vercel, nesta ordem:
+//   1. Google Gemini      (GEMINI_API_KEY — a mesma chave do CRM)
+//   2. OpenAI             (OPENAI_API_KEY)
+//   3. Vercel AI Gateway  (AI_GATEWAY_API_KEY ou token OIDC automático do Vercel)
+// Em cada provedor, os modelos são descobertos na hora (nomes mudam e modelos antigos são
+// desativados), então o gerador não quebra quando um modelo sai do ar.
+
 // Prazo total de cada requisição, com folga antes do corte do Vercel (maxDuration 60 s).
 const REQUEST_BUDGET_MS = 50000;
+const HOUR = 60 * 60 * 1000;
+const cache = new Map(); // provedor -> { list, at }
 
-// Preferência: modelos rápidos e baratos que escrevem bem em português.
-const PREFERRED = [/^anthropic\/claude-haiku/, /^openai\/gpt-[\d.]+-mini$/, /^anthropic\/claude-sonnet/];
-const STATIC_MODELS = ["anthropic/claude-haiku-4.5", "openai/gpt-5-mini", "anthropic/claude-sonnet-4.5"];
-let modelCache = { list: null, at: 0 };
-
-// Consulta o catálogo do Gateway (nomes de modelos mudam) e escolhe, em cada família
-// preferida, a versão mais nova.
-async function discoverModels() {
-  if (modelCache.list && Date.now() - modelCache.at < 60 * 60 * 1000) return modelCache.list;
-  try {
-    const r = await fetch(`${GATEWAY}/models`, { signal: AbortSignal.timeout(5000) });
-    if (!r.ok) return null;
-    const ids = ((await r.json()).data || [])
-      .filter((m) => !m.type || m.type === "language")
-      .map((m) => String(m.id || ""));
-    const version = (id) => (id.match(/\d+(?:\.\d+)?/g) || ["0"]).map(Number);
-    const newer = (x, y) => { const a = version(x), b = version(y);
-      for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] || 0) !== (b[i] || 0)) return (b[i] || 0) - (a[i] || 0);
-      return 0; };
-    const list = PREFERRED.map((re) => ids.filter((id) => re.test(id) && !/preview|thinking/.test(id)).sort(newer)[0]).filter(Boolean);
-    if (list.length) modelCache = { list, at: Date.now() };
-    return list.length ? list : null;
-  } catch (_) {
-    return null;
-  }
+async function cached(key, loader) {
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < HOUR) return hit.list;
+  let list = null;
+  try { list = await loader(); } catch (_) {}
+  if (list && list.length) cache.set(key, { list, at: Date.now() });
+  return list && list.length ? list : null;
 }
 
-async function modelChain() {
-  const found = await discoverModels();
-  return [...new Set([process.env.AI_MODEL, ...(found || STATIC_MODELS)].filter(Boolean))].slice(0, 3);
+// Ordena do mais novo para o mais antigo comparando os números do nome (ex.: 3 > 2.5).
+function newestFirst(x, y) {
+  const a = (x.match(/\d+(?:\.\d+)?/g) || ["0"]).map(Number), b = (y.match(/\d+(?:\.\d+)?/g) || ["0"]).map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] || 0) !== (b[i] || 0)) return (b[i] || 0) - (a[i] || 0);
+  return 0;
+}
+
+const PROVIDERS = {
+  gemini: {
+    label: "gemini",
+    key: () => process.env.GEMINI_API_KEY,
+    async models(key) {
+      const found = await cached("gemini", async () => {
+        const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000", {
+          headers: { "x-goog-api-key": key }, signal: AbortSignal.timeout(5000)
+        });
+        if (!r.ok) return null;
+        const names = ((await r.json()).models || [])
+          .filter((m) => (m.supportedGenerationMethods || []).includes("generateContent"))
+          .map((m) => String(m.name || "").replace(/^models\//, ""))
+          .filter((n) => /^gemini-.*flash/.test(n) && !/image|tts|audio|live|embed|thinking|exp|preview/.test(n));
+        const lite = names.filter((n) => /lite/.test(n)).sort(newestFirst);
+        return [...names.filter((n) => !/lite/.test(n)).sort(newestFirst), ...lite];
+      });
+      return [process.env.GEMINI_MODEL, ...(found || ["gemini-flash-latest", "gemini-flash-lite-latest"])].filter(Boolean).slice(0, 2);
+    },
+    async request(model, key, prompt, temperature, signal) {
+      const generationConfig = { responseMimeType: "application/json", temperature };
+      if (!noThinking.has(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+      let r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method: "POST", signal,
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig })
+      });
+      if (r.status === 400 && generationConfig.thinkingConfig) {
+        const raw = await r.clone().text();
+        if (/think/i.test(raw)) { // modelo não aceita desligar o raciocínio: repete sem a opção
+          noThinking.add(model);
+          delete generationConfig.thinkingConfig;
+          r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+            method: "POST", signal,
+            headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+            body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig })
+          });
+        }
+      }
+      return r;
+    },
+    text: (data) => data?.candidates?.[0]?.content?.parts?.filter((p) => !p.thought).map((p) => p.text || "").join("") || "",
+    error: (data) => data?.error?.message
+  },
+
+  openai: {
+    label: "openai",
+    key: () => process.env.OPENAI_API_KEY,
+    async models(key) {
+      const found = await cached("openai", async () => {
+        const r = await fetch("https://api.openai.com/v1/models", {
+          headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(5000)
+        });
+        if (!r.ok) return null;
+        return ((await r.json()).data || []).map((m) => String(m.id || ""))
+          .filter((id) => /^gpt-[\d.o]+-mini$/.test(id)).sort(newestFirst);
+      });
+      return [process.env.OPENAI_MODEL, ...(found || ["gpt-4o-mini"])].filter(Boolean).slice(0, 1);
+    },
+    request: (model, key, prompt, temperature, signal) => chatCompletions("https://api.openai.com/v1", model, key, prompt, temperature, signal),
+    text: chatText,
+    error: (data) => data?.error?.message
+  },
+
+  gateway: {
+    label: "vercel",
+    // Chave criada no painel, token OIDC do ambiente ou token OIDC enviado pelo Vercel na requisição.
+    key: (ctx) => process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN || ctx.oidc,
+    async models() {
+      const found = await cached("gateway", async () => {
+        const r = await fetch("https://ai-gateway.vercel.sh/v1/models", { signal: AbortSignal.timeout(5000) });
+        if (!r.ok) return null;
+        const ids = ((await r.json()).data || []).filter((m) => !m.type || m.type === "language").map((m) => String(m.id || ""));
+        return [/^anthropic\/claude-haiku/, /^openai\/gpt-[\d.]+-mini$/]
+          .map((re) => ids.filter((id) => re.test(id) && !/preview|thinking/.test(id)).sort(newestFirst)[0]).filter(Boolean);
+      });
+      return [process.env.AI_MODEL, ...(found || ["anthropic/claude-haiku-4.5"])].filter(Boolean).slice(0, 1);
+    },
+    request: (model, key, prompt, temperature, signal) => chatCompletions("https://ai-gateway.vercel.sh/v1", model, key, prompt, temperature, signal),
+    text: chatText,
+    error: (data) => data?.error?.message
+  }
+};
+// Modelos Gemini que recusaram a opção de desligar o raciocínio.
+const noThinking = new Set();
+
+function chatCompletions(base, model, key, prompt, temperature, signal) {
+  // Modelos de raciocínio da OpenAI só aceitam a temperatura padrão.
+  const body = { model, messages: [
+    { role: "system", content: "Você responde somente com um objeto JSON válido, sem markdown e sem texto fora do JSON." },
+    { role: "user", content: prompt }
+  ] };
+  if (!/gpt-5|^o\d|\/o\d/.test(model)) body.temperature = temperature;
+  return fetch(`${base}/chat/completions`, {
+    method: "POST", signal,
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    body: JSON.stringify(body)
+  });
+}
+
+function chatText(data) {
+  const content = data?.choices?.[0]?.message?.content;
+  return Array.isArray(content) ? content.map((c) => c?.text || "").join("") : String(content || "");
 }
 
 // Códigos curtos exibidos na tela para diagnóstico (sem nenhum dado sensível).
 function aiError(code, attempts = [], hint = "") {
   const err = new Error(`IA indisponível (${code}).`);
   err.status = 502;
-  // Ex.: "LIMITE · claude-haiku-4.5=LIMITE gpt-5-mini=MODELO" — o que aconteceu em cada modelo.
-  const detail = attempts.map((t) => `${t.model.split("/").pop()}=${t.code}`).join(" ");
+  // Ex.: "ACESSO · gemini:gemini-3-flash=LIMITE vercel:claude-haiku-5.5=ACESSO · "motivo"".
+  const detail = attempts.map((t) => `${t.provider}:${t.model.split("/").pop()}=${t.code}`).join(" ");
   err.code = [code, detail, hint && `"${hint}"`].filter(Boolean).join(" · ");
   return err;
 }
 
+function codeFor(status, msg) {
+  if (status === 401 || status === 403 || /api key|invalid.*key|permission/i.test(msg)) return "ACESSO";
+  if (status === 402 || /credit|billing|quota exceeded|insufficient/i.test(msg)) return "CREDITO";
+  if (status === 429) return "LIMITE";
+  if (status === 404) return "MODELO";
+  return `G${status}`;
+}
+
 async function callAI(prompt, temperature, ctx) {
-  // Credenciais possíveis, em ordem: chave criada no painel, token OIDC do ambiente, token OIDC
-  // enviado pelo Vercel na requisição. Se uma for recusada, tenta a próxima.
-  const tokens = [...new Set([process.env.AI_GATEWAY_API_KEY, process.env.VERCEL_OIDC_TOKEN, ctx.oidc].filter(Boolean))];
-  if (!tokens.length) throw aiError("ACESSO", [], "sem token OIDC");
-  let t = 0;
-
-  const models = await modelChain();
   const attempts = [];
-  let lastCode = "SEM-RESPOSTA";
   let hint = "";
-  for (let i = 0; i < models.length; i++) {
-    const model = models[i];
-    const remaining = ctx.deadline - Date.now();
-    if (remaining < 5000) { if (lastCode === "SEM-RESPOSTA") lastCode = "TEMPO"; break; }
-
-    let r, raw = "";
-    try {
-      r = await fetch(`${GATEWAY}/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokens[t]}` },
-        body: JSON.stringify({
-          model,
-          temperature,
-          max_tokens: 3000,
-          messages: [
-            { role: "system", content: "Você responde somente com um objeto JSON válido, sem markdown e sem texto fora do JSON." },
-            { role: "user", content: prompt }
-          ]
-        }),
+  for (const id of Object.keys(PROVIDERS)) {
+    const provider = PROVIDERS[id];
+    const key = provider.key(ctx);
+    if (!key) continue;
+    const models = await provider.models(key);
+    for (const model of models) {
+      const remaining = ctx.deadline - Date.now();
+      if (remaining < 5000) { attempts.push({ provider: provider.label, model, code: "TEMPO" }); break; }
+      let r, data = {};
+      try {
         // Um modelo lento não pode consumir todo o prazo: sobra tempo para o próximo.
-        signal: AbortSignal.timeout(Math.min(remaining - 1500, 35000))
-      });
-      raw = await r.text();
-    } catch (e) {
-      lastCode = e?.name === "TimeoutError" ? "TEMPO" : "CONEXAO";
-      attempts.push({ model, code: lastCode });
-      console.error(`bio: ${model} -> ${lastCode}`);
-      continue;
+        r = await provider.request(model, key, prompt, temperature, AbortSignal.timeout(Math.min(remaining - 1500, 30000)));
+        const raw = await r.text();
+        try { data = JSON.parse(raw); } catch (_) {}
+      } catch (e) {
+        const code = e?.name === "TimeoutError" ? "TEMPO" : "CONEXAO";
+        attempts.push({ provider: provider.label, model, code });
+        console.error(`bio: ${provider.label}/${model} -> ${code}`);
+        continue;
+      }
+      if (r.ok) {
+        const parsed = parseJson(provider.text(data));
+        if (parsed) return parsed;
+        attempts.push({ provider: provider.label, model, code: "FORMATO" });
+        console.error(`bio: ${provider.label}/${model} -> FORMATO`);
+        continue;
+      }
+      const msg = String(provider.error(data) || "");
+      const code = codeFor(r.status, msg);
+      // Mensagem do provedor, encurtada e sem nada parecido com chave, para o diagnóstico na tela.
+      hint = msg.replace(/[A-Za-z0-9_\-.]{24,}/g, "…").replace(/["\n]/g, " ").trim().slice(0, 120);
+      attempts.push({ provider: provider.label, model, code });
+      console.error(`bio: ${provider.label}/${model} -> HTTP ${r.status}: ${hint}`);
+      if (code === "ACESSO" || code === "CREDITO") break; // problema da conta: outro modelo do mesmo provedor não resolve
     }
-    let data = {};
-    try { data = JSON.parse(raw); } catch (_) {}
-
-    if (r.ok) {
-      const content = data?.choices?.[0]?.message?.content;
-      const text = Array.isArray(content) ? content.map((c) => c?.text || "").join("") : String(content || "");
-      const parsed = parseJson(text);
-      if (parsed) return parsed;
-      lastCode = "FORMATO";
-      attempts.push({ model, code: lastCode });
-      console.error(`bio: ${model} -> FORMATO (${data?.choices?.[0]?.finish_reason || "-"})`);
-      continue;
-    }
-
-    const msg = String(data?.error?.message || raw || "").slice(0, 200);
-    console.error(`bio: ${model} -> HTTP ${r.status}: ${msg}`);
-    // Mensagem do Vercel, encurtada e sem nada parecido com token, para o diagnóstico na tela.
-    hint = msg.replace(/[A-Za-z0-9_\-.]{24,}/g, "…").replace(/["\n]/g, " ").trim().slice(0, 140);
-    if (r.status === 401 || r.status === 403) {
-      if (++t < tokens.length) { i--; continue; } // tenta a próxima credencial no mesmo modelo
-      throw aiError("ACESSO", [...attempts, { model, code: "ACESSO" }], hint);
-    }
-    if (r.status === 402) throw aiError("CREDITO", [...attempts, { model, code: "CREDITO" }], hint);
-    lastCode = r.status === 429 ? "LIMITE" : r.status === 404 ? "MODELO" : `G${r.status}`;
-    attempts.push({ model, code: lastCode });
   }
+  if (!attempts.length) throw aiError("SEM-IA", [], "nenhuma chave de IA configurada");
   // O código principal é o problema mais relevante, não só o último.
-  const order = ["LIMITE", "TEMPO", "FORMATO", "CONEXAO"];
-  const main = order.find((c) => attempts.some((t) => t.code === c)) || lastCode;
+  const order = ["LIMITE", "CREDITO", "ACESSO", "TEMPO", "MODELO", "FORMATO", "CONEXAO"];
+  const main = order.find((c) => attempts.some((t) => t.code === c)) || attempts[attempts.length - 1].code;
   throw aiError(main, attempts, hint);
 }
 
