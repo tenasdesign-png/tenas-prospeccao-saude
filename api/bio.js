@@ -295,11 +295,16 @@ const PROVIDERS = {
         const lite = names.filter((n) => /lite/.test(n)).sort(newestFirst);
         return [...names.filter((n) => !/lite/.test(n)).sort(newestFirst), ...lite];
       });
-      return [process.env.GEMINI_MODEL, ...(found || ["gemini-flash-latest", "gemini-flash-lite-latest"])].filter(Boolean).slice(0, 2);
+      const list = found || ["gemini-flash-latest", "gemini-flash-lite-latest"];
+      const flash = list.find((n) => !/lite/.test(n)), lite = list.find((n) => /lite/.test(n));
+      return [process.env.GEMINI_MODEL || flash, lite].filter(Boolean);
     },
     async request(model, key, prompt, temperature, signal) {
       const generationConfig = { responseMimeType: "application/json", temperature };
-      if (!noThinking.has(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+      // Raciocínio mínimo: no Gemini 3+ é "thinkingLevel"; nos anteriores, orçamento zero.
+      if (!noThinking.has(model)) {
+        generationConfig.thinkingConfig = geminiVersion(model) >= 3 ? { thinkingLevel: "minimal" } : { thinkingBudget: 0 };
+      }
       let r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: "POST", signal,
         headers: { "Content-Type": "application/json", "x-goog-api-key": key },
@@ -361,21 +366,32 @@ const PROVIDERS = {
     error: (data) => data?.error?.message
   }
 };
-// Modelos Gemini que recusaram a opção de desligar o raciocínio.
+// Modelos que recusaram a opção de reduzir o raciocínio.
 const noThinking = new Set();
+const geminiVersion = (model) => Number((/gemini-(\d+(?:\.\d+)?)/.exec(model) || [])[1] || 0);
 
-function chatCompletions(base, model, key, prompt, temperature, signal) {
-  // Modelos de raciocínio da OpenAI só aceitam a temperatura padrão.
+async function chatCompletions(base, model, key, prompt, temperature, signal) {
   const body = { model, messages: [
     { role: "system", content: "Você responde somente com um objeto JSON válido, sem markdown e sem texto fora do JSON." },
     { role: "user", content: prompt }
   ] };
-  if (!/gpt-5|^o\d|\/o\d/.test(model)) body.temperature = temperature;
-  return fetch(`${base}/chat/completions`, {
+  // Modelos de raciocínio da OpenAI (gpt-5, o-series) não aceitam temperatura; pedimos raciocínio
+  // baixo para responderem rápido.
+  const reasoning = /gpt-5|(^|\/)o\d/.test(model);
+  if (!reasoning) body.temperature = temperature;
+  else if (!noThinking.has(model)) body.reasoning_effort = "low";
+  const send = () => fetch(`${base}/chat/completions`, {
     method: "POST", signal,
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
     body: JSON.stringify(body)
   });
+  let r = await send();
+  if (r.status === 400 && body.reasoning_effort && /reasoning/i.test(await r.clone().text())) {
+    noThinking.add(model);
+    delete body.reasoning_effort;
+    r = await send();
+  }
+  return r;
 }
 
 function chatText(data) {
@@ -401,50 +417,89 @@ function codeFor(status, msg) {
   return `G${status}`;
 }
 
-async function callAI(prompt, temperature, ctx) {
-  const attempts = [];
-  let hint = "";
+// Uma tentativa num provedor/modelo. Resolve com o JSON da IA ou rejeita com { code, hint }.
+async function attempt({ provider, model, key }, prompt, temperature, ctx, signal) {
+  let r, data = {};
+  try {
+    r = await provider.request(model, key, prompt, temperature, signal);
+    const raw = await r.text();
+    try { data = JSON.parse(raw); } catch (_) {}
+  } catch (e) {
+    throw { code: e?.name === "TimeoutError" || e?.name === "AbortError" ? "TEMPO" : "CONEXAO" };
+  }
+  if (r.ok) {
+    const parsed = parseJson(provider.text(data));
+    if (parsed) return parsed;
+    throw { code: "FORMATO" };
+  }
+  const msg = String(provider.error(data) || "");
+  // Mensagem do provedor, encurtada e sem nada parecido com chave, para o diagnóstico na tela.
+  throw { code: codeFor(r.status, msg), hint: msg.replace(/[A-Za-z0-9_\-.]{24,}/g, "…").replace(/["\n]/g, " ").trim().slice(0, 120) };
+}
+
+// Ordem das tentativas: o melhor modelo de cada provedor e, por último, o Gemini Lite (mais rápido).
+async function candidates(ctx) {
+  const list = [];
   for (const id of Object.keys(PROVIDERS)) {
     const provider = PROVIDERS[id];
     const key = provider.key(ctx);
     if (!key) continue;
     const models = await provider.models(key);
-    for (const model of models) {
-      const remaining = ctx.deadline - Date.now();
-      if (remaining < 5000) { attempts.push({ provider: provider.label, model, code: "TEMPO" }); break; }
-      let r, data = {};
-      try {
-        // Um modelo lento não pode consumir todo o prazo: sobra tempo para o próximo.
-        r = await provider.request(model, key, prompt, temperature, AbortSignal.timeout(Math.min(remaining - 1500, 30000)));
-        const raw = await r.text();
-        try { data = JSON.parse(raw); } catch (_) {}
-      } catch (e) {
-        const code = e?.name === "TimeoutError" ? "TEMPO" : "CONEXAO";
-        attempts.push({ provider: provider.label, model, code });
-        console.error(`bio: ${provider.label}/${model} -> ${code}`);
-        continue;
-      }
-      if (r.ok) {
-        const parsed = parseJson(provider.text(data));
-        if (parsed) return parsed;
-        attempts.push({ provider: provider.label, model, code: "FORMATO" });
-        console.error(`bio: ${provider.label}/${model} -> FORMATO`);
-        continue;
-      }
-      const msg = String(provider.error(data) || "");
-      const code = codeFor(r.status, msg);
-      // Mensagem do provedor, encurtada e sem nada parecido com chave, para o diagnóstico na tela.
-      hint = msg.replace(/[A-Za-z0-9_\-.]{24,}/g, "…").replace(/["\n]/g, " ").trim().slice(0, 120);
-      attempts.push({ provider: provider.label, model, code });
-      console.error(`bio: ${provider.label}/${model} -> HTTP ${r.status}: ${hint}`);
-      if (code === "ACESSO" || code === "CREDITO") break; // problema da conta: outro modelo do mesmo provedor não resolve
-    }
+    models.forEach((model, i) => list.push({ provider, model, key, rank: i }));
   }
-  if (!attempts.length) throw aiError("SEM-IA", [], "nenhuma chave de IA configurada");
-  // O código principal é o problema mais relevante, não só o último.
-  const order = ["LIMITE", "CREDITO", "ACESSO", "TEMPO", "MODELO", "FORMATO", "CONEXAO"];
-  const main = order.find((c) => attempts.some((t) => t.code === c)) || attempts[attempts.length - 1].code;
-  throw aiError(main, attempts, hint);
+  return [...list.filter((c) => c.rank === 0), ...list.filter((c) => c.rank > 0)].slice(0, 4);
+}
+
+// Corrida escalonada: a 1ª tentativa começa na hora e, se ainda não respondeu, outra começa a cada
+// HEDGE_MS em paralelo. A primeira resposta válida vence e as demais são canceladas. Assim um
+// provedor lento não consome o prazo inteiro sozinho.
+const HEDGE_MS = 7000;
+
+async function callAI(prompt, temperature, ctx) {
+  const list = await candidates(ctx);
+  if (!list.length) throw aiError("SEM-IA", [], "nenhuma chave de IA configurada");
+
+  const controllers = list.map(() => new AbortController());
+  const results = list.map(() => null);
+  const timers = list.map(() => null); // tentativas agendadas que ainda não começaram
+  const startAt = [];
+  let hint = "";
+  try {
+    return await new Promise((resolve, reject) => {
+      let pending = list.length, won = false;
+      list.forEach((c, i) => {
+        const start = () => {
+          if (won) return;
+          // Se uma tentativa anterior já falhou de vez, esta pode começar antes do horário.
+          const remaining = ctx.deadline - Date.now();
+          if (remaining < 4000) { results[i] = "TEMPO"; if (--pending === 0) reject(); return; }
+          const signal = AbortSignal.any([controllers[i].signal, AbortSignal.timeout(remaining - 1000)]);
+          attempt(c, prompt, temperature, ctx, signal).then((out) => {
+            if (!won) { won = true; resolve(out); }
+          }, (err) => {
+            results[i] = err?.code || "ERRO";
+            if (err?.hint) hint = err.hint;
+            console.error(`bio: ${c.provider.label}/${c.model} -> ${results[i]}${err?.hint ? `: ${err.hint}` : ""}`);
+            // Falhou rápido? Adianta a próxima tentativa que ainda está esperando.
+            const next = timers.findIndex((t) => t);
+            if (next !== -1) { clearTimeout(timers[next]); timers[next] = null; startAt[next](); }
+            if (--pending === 0) reject();
+          });
+        };
+        startAt[i] = start;
+        timers[i] = i === 0 ? null : setTimeout(() => { timers[i] = null; start(); }, i * HEDGE_MS);
+        if (i === 0) start();
+      });
+    });
+  } catch (_) {
+    const attempts = list.map((c, i) => ({ provider: c.provider.label, model: c.model, code: results[i] || "TEMPO" }));
+    const order = ["LIMITE", "CREDITO", "ACESSO", "TEMPO", "MODELO", "FORMATO", "CONEXAO"];
+    const main = order.find((code) => attempts.some((t) => t.code === code)) || attempts[0].code;
+    throw aiError(main, attempts, hint);
+  } finally {
+    controllers.forEach((c) => c.abort());
+    timers.forEach((t) => t && clearTimeout(t));
+  }
 }
 
 function parseJson(text) {
